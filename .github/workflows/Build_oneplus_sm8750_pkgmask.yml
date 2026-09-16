@@ -564,25 +564,7 @@ jobs:
           KSU_VERSION=$(expr $(git rev-list --count main) + 30700 2>/dev/null || echo 114514)
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
           echo "ksuver=$KSU_VERSION" >> $GITHUB_OUTPUT
-          
-      - name: 🔧 Export sel_handle_status_ops for ReSukiSU (KALLSYMS_ALL=n)
-        run: |
-          cd kernel_workspace/common
-          FILE="security/selinux/selinuxfs.c"
-          if [ ! -f "$FILE" ]; then
-            echo "::error::未找到 $FILE"
-            exit 1
-          fi
-          if grep -q 'EXPORT_SYMBOL.*sel_handle_status_ops' "$FILE"; then
-            echo "[OK] sel_handle_status_ops 已导出，跳过"
-            exit 0
-          fi
-          # 去掉可能的 static 修饰
-          sed -i 's/^static \(const struct file_operations sel_handle_status_ops\)/\1/' "$FILE"
-          # 文件末尾追加导出
-          printf '\n/* ReSukiSU: static export for KALLSYMS_ALL=n */\nEXPORT_SYMBOL_GPL(sel_handle_status_ops);\n' >> "$FILE"
-          echo "[OK] 已追加 sel_handle_status_ops 导出"
-          grep -n 'sel_handle_status_ops' "$FILE" | head -5      
+                
       - name: 🔧 Set up SUSFS (配置 SUSFS - 官方原仓库自动最新版)
         if: ${{ env.ENABLE_SUSFS == 'true' }}
         run: |
@@ -618,6 +600,24 @@ jobs:
           echo "[OK] SUSFS stealth applied via sed"
           grep -q "ksdcardd" fs/susfs.c && echo "[OK] Verified: susfs_sdcard_monitor renamed to ksdcardd" || echo "[WARN] Rename verification failed"
           echo "[OK] SUSFS 补丁处理流程全部完成"
+      - name: 🔧 Export sel_handle_status_ops for ReSukiSU (KALLSYMS_ALL=n)
+        run: |
+          cd kernel_workspace/common
+          FILE="security/selinux/selinuxfs.c"
+          if [ ! -f "$FILE" ]; then
+            echo "::error::未找到 $FILE"
+            exit 1
+          fi
+          if grep -q 'EXPORT_SYMBOL.*sel_handle_status_ops' "$FILE"; then
+            echo "[OK] sel_handle_status_ops 已导出，跳过"
+            exit 0
+          fi
+          # 去掉可能的 static 修饰
+          sed -i 's/^static \(const struct file_operations sel_handle_status_ops\)/\1/' "$FILE"
+          # 文件末尾追加导出
+          printf '\n/* ReSukiSU: static export for KALLSYMS_ALL=n */\nEXPORT_SYMBOL_GPL(sel_handle_status_ops);\n' >> "$FILE"
+          echo "[OK] 已追加 sel_handle_status_ops 导出"
+          grep -n 'sel_handle_status_ops' "$FILE" | head -5
       - name: 🔧 Set gki_defconfig (设置编译配置) 
         run: |
           cd kernel_workspace
