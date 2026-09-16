@@ -65,9 +65,13 @@ h1{font-size:22px;font-weight:500;letter-spacing:.1px;margin-bottom:2px}
 .pill.warn{background:#fde8c4;color:var(--warn)}
 .pill.info{background:var(--primaryContainer);color:var(--onPrimaryContainer)}
 .stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
-.stat{background:var(--surfaceContainerLow);border-radius:14px;padding:12px 8px;text-align:center}
+.stat{background:var(--surfaceContainerLow);border-radius:14px;padding:12px 8px;text-align:center;
+  cursor:pointer;border:1px solid transparent;transition:border .15s,transform .1s;user-select:none}
+.stat:active{transform:scale(.97)}
+.stat.clickable:hover{border-color:var(--outlineVariant)}
 .stat .n{font-size:20px;font-weight:500}
 .stat .l{font-size:11px;color:var(--onSurfaceVariant);margin-top:2px}
+.stat .arrow{font-size:9px;color:var(--onSurfaceVariant);margin-left:3px;opacity:.6}
 .nok{color:var(--ok)}.nbad{color:var(--error)}.nwarn{color:var(--warn)}
 input[type=text],input[type=search]{width:100%;padding:12px 14px;border-radius:12px;
   border:1px solid var(--outlineVariant);background:var(--surfaceContainerLowest);
@@ -94,16 +98,34 @@ input:focus{border-color:var(--primary)}
 .path-item .del{flex:0 0 auto;background:var(--errorContainer);color:var(--onErrorContainer);
   border:0;border-radius:999px;padding:6px 12px;font-size:11.5px;font-weight:500;cursor:pointer;font-family:inherit}
 .path-item .del:active{transform:scale(.96)}
-.badge{display:inline-block;background:var(--surfaceContainerHigh);color:var(--onSurfaceVariant);
-  padding:1px 6px;border-radius:6px;font-size:10px;margin-left:4px}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--onSurface);
   color:var(--surface);padding:10px 20px;border-radius:999px;font-size:13px;opacity:0;
-  transition:.25s;pointer-events:none;z-index:99;max-width:90%}
+  transition:.25s;pointer-events:none;z-index:200;max-width:90%}
 .toast.show{opacity:.95}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid currentColor;
   border-top-color:transparent;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px;margin-right:6px}
 @keyframes sp{to{transform:rotate(360deg)}}
 .empty{color:var(--onSurfaceVariant);font-size:12px;text-align:center;padding:16px 0}
+
+/* ---------- 模态框（点击数字弹出）---------- */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:150;
+  display:none;align-items:flex-end;justify-content:center;animation:fade .2s}
+.modal.show{display:flex}
+.modal-box{background:var(--surface);width:100%;max-width:640px;max-height:80vh;
+  border-radius:20px 20px 0 0;padding:18px 16px calc(18px + var(--safe-bottom));
+  overflow-y:auto;animation:slideup .25s}
+@keyframes slideup{from{transform:translateY(30px);opacity:.5}to{transform:none;opacity:1}}
+.modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.modal-title{font-size:16px;font-weight:600}
+.modal-close{background:var(--surfaceContainerHigh);border:0;color:var(--onSurfaceVariant);
+  width:32px;height:32px;border-radius:50%;font-size:18px;cursor:pointer;font-family:inherit;
+  display:flex;align-items:center;justify-content:center}
+.modal-close:active{transform:scale(.95)}
+.modal-item{display:flex;align-items:flex-start;gap:10px;padding:10px 0;
+  border-bottom:1px solid var(--outlineVariant);font-size:13px}
+.modal-item:last-child{border:none}
+.modal-item .ic{flex:0 0 auto;font-size:15px;line-height:1.3}
+.modal-item .msg{flex:1;word-break:break-word;line-height:1.5}
 </style>
 </head>
 <body>
@@ -125,9 +147,18 @@ input:focus{border-color:var(--primary)}
 <!-- ============ Tab 1: SUSFS 修复 ============ -->
 <div class="page active" id="page-susfs">
   <div class="stat-grid">
-    <div class="stat"><div class="n nok" id="scPass">–</div><div class="l">通过</div></div>
-    <div class="stat"><div class="n nwarn" id="scWarn">–</div><div class="l">警告</div></div>
-    <div class="stat"><div class="n nbad" id="scFail">–</div><div class="l">失败</div></div>
+    <div class="stat clickable" onclick="showSelfcheck('ok')">
+      <div class="n nok" id="scPass">–</div>
+      <div class="l">通过 <span class="arrow">▸</span></div>
+    </div>
+    <div class="stat clickable" onclick="showSelfcheck('warn')">
+      <div class="n nwarn" id="scWarn">–</div>
+      <div class="l">警告 <span class="arrow">▸</span></div>
+    </div>
+    <div class="stat clickable" onclick="showSelfcheck('fail')">
+      <div class="n nbad" id="scFail">–</div>
+      <div class="l">失败 <span class="arrow">▸</span></div>
+    </div>
   </div>
   <div class="card">
     <h3>检测项 <span class="tag" id="susfsVer">–</span></h3>
@@ -135,10 +166,9 @@ input:focus{border-color:var(--primary)}
   </div>
   <div class="btnrow">
     <button class="btn primary" onclick="act('susfs_fix')">一键修复</button>
-    <button class="btn" onclick="act('susfs_check');act('selfcheck')">重新检测</button>
+    <button class="btn" onclick="act('selfcheck')">重新检测</button>
   </div>
-  <div class="hint">提示：引导状态伪装由 SUSFS 内核重定向完成（不修改属性），
-    检测项里的 prop 三连失败属正常，应用读到的仍是 green/locked。</div>
+  <div class="hint">点击上方「通过/警告/失败」数字可查看详细列表。</div>
 </div>
 
 <!-- ============ Tab 2: ID 伪装 ============ -->
@@ -235,6 +265,18 @@ input:focus{border-color:var(--primary)}
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- ============ 模态框（点击数字弹出）============ -->
+<div class="modal" id="scModal" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title" id="scModalTitle">详情</div>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div id="scModalBody"><div class="empty">加载中…</div></div>
+  </div>
+</div>
+
 </div>
 
 <script>
@@ -368,10 +410,34 @@ function render(){
   setText("procHideTag", pm.hide_proc_names||"（无）");
   document.getElementById("hiddenProcs").textContent = pm.hide_proc_names||"（无）";
   renderProcs();
-
   renderSusPaths();
 
   document.getElementById("liveTag").textContent = "运行中";
+}
+
+/* ============ 自检详情模态框 ============ */
+function showSelfcheck(type){
+  if(!S || !S.selfcheck || !S.selfcheck.items){
+    toast("暂无数据，请先重新检测");
+    return;
+  }
+  const items = S.selfcheck.items.filter(x=>x.st===type);
+  const titles = {ok:"✅ 通过的检测项", warn:"⚠️ 警告的检测项", fail:"❌ 失败的检测项"};
+  const empty = {ok:"无通过项", warn:"无警告项", fail:"无失败项"};
+  document.getElementById("scModalTitle").textContent = titles[type]||"详情";
+  const body = document.getElementById("scModalBody");
+  if(!items.length){
+    body.innerHTML = `<div class="empty">${empty[type]||"无"}</div>`;
+  } else {
+    const ic = type==="ok"?"✔️":(type==="fail"?"❌":"⚠️");
+    body.innerHTML = items.map(x=>
+      `<div class="modal-item"><span class="ic">${ic}</span><span class="msg">${esc(x.msg||"")}</span></div>`
+    ).join("");
+  }
+  document.getElementById("scModal").classList.add("show");
+}
+function closeModal(){
+  document.getElementById("scModal").classList.remove("show");
 }
 
 /* ============ ID 伪装 tab ============ */
@@ -505,7 +571,6 @@ function addSusPath(){
   act("suspath_add:"+p);
   inp.value = "";
 }
-
 function delSusPath(p){
   act("suspath_del:"+p);
 }
