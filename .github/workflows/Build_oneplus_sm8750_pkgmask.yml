@@ -565,7 +565,7 @@ jobs:
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
           echo "ksuver=$KSU_VERSION" >> $GITHUB_OUTPUT
           
-            - name: 🔧 Export sel_handle_status_ops for ReSukiSU (KALLSYMS_ALL=n)
+      - name: 🔧 Export sel_handle_status_ops for ReSukiSU (KALLSYMS_ALL=n)
         run: |
           cd kernel_workspace/common
           FILE="security/selinux/selinuxfs.c"
