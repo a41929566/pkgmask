@@ -57,7 +57,15 @@ apply_android_id() {
 gen_bt_mac() {
     local oui hx t1 t2 t3
     oui=$(echo "$1" | cut -d: -f1-3)
+    # 兜底：OUI 格式异常时用本地管理默认前缀
+    case "$oui" in
+        ??:??:??) ;;
+        *) oui="02:00:00" ;;
+    esac
     hx=$(rand_hex 3)
+    # 兜底：确保 hx 是 6 字符（防极端情况 rand_hex 少字符）
+    while [ ${#hx} -lt 6 ]; do hx="${hx}0"; done
+    hx=$(echo "$hx" | cut -c1-6)
     t1=$(echo "$hx" | cut -c1-2)
     t2=$(echo "$hx" | cut -c3-4)
     t3=$(echo "$hx" | cut -c5-6)
