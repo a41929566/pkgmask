@@ -63,7 +63,7 @@ BUILTIN
 
     # 配置文件里的额外路径（空格分隔）
     local extra
-    extra=$(get_config SUSFS_PATH_HIDE_EXTRA "")
+    extra=$(get_config PATH_HIDE_EXTRA "")
     if [ -n "$extra" ]; then
         echo "$extra" | tr ' ' '\n'
     fi
