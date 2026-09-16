@@ -78,7 +78,6 @@ FIRST=1
             [ -z "$b" ] && continue
 
             probe "$a_uid" "$b" > "$RUN_DIR/.probe.tmp" 2>&1
-            probe_rc=$?
             probe_result=$(cat "$RUN_DIR/.probe.tmp" 2>/dev/null)
             rm -f "$RUN_DIR/.probe.tmp"
 
