@@ -39,7 +39,7 @@ SPOOF_BOOTCONFIG=1
 SPOOF_OPEN_REDIRECT=1
 
 # 伪装内容（内核重定向后的值）
-SPOOF_CMDLINE='androidboot.verifiedbootstate=green androidboot.vbmeta.device_state=locked androidboot.selinux=enforcing'
+SPOOF_CMDLINE='androidboot.verifiedbootstate=green androidboot.vbmeta.device_state=locked androidboot.selinux=enforcing oplusboot.verifiedbootstate=green'
 
 # 属性三连（仅供内核重定向失效时兜底，正常情况用不到）
 SPOOF_PROP=1
