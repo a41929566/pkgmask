@@ -639,7 +639,7 @@ jobs:
           echo "CONFIG_TMPFS_XATTR=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_TMPFS_POSIX_ACL=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y" >> ./common/arch/arm64/configs/gki_defconfig
-          
+          echo "CONFIG_KALLSYMS_ALL=n" >> ./common/arch/arm64/configs/gki_defconfig
           #Remove check_defconfig
           sudo sed -i 's/check_defconfig//' ./common/build.config.gki
       - name: 🔧 Apply PkgMask (应用 pkgmask v4.11 包名/进程隐藏 + hwid_spoof 硬件ID拦截)
