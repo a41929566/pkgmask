@@ -705,15 +705,15 @@ module_param_cb(reload, &reload_ops, NULL, 0600);
 
 static int status_get(char *buffer, const struct kernel_param *kp)
 {
+	/* 安全：不暴露模块版本号和具体 hook 清单
+	 * 旧版输出 "pkgmask v4.11" 版本号 + hook_perm/hook_getattr 等开关
+	 * 检测方可按字符串匹配识别模块，或根据 hook 清单判断隐藏能力
+	 * 新版只保留"是否工作"的最基本信息 */
 	return scnprintf(buffer, PAGE_SIZE,
-			 "pkgmask v4.11\n"
-			 "scope=%s targets=%u deny=%u allow=%u\n"
-			 "hide_dirents=%d hook_getdents=%d hook_perm=%d hook_getattr=%d\n"
-			 "hide_proc_enabled=%d proc_names=%u\n",
-			 scope_mode, target_count, deny_uid_count, allow_uid_count,
-			 hide_dirents ? 1 : 0, hook_getdents ? 1 : 0,
-			 hook_perm ? 1 : 0, hook_getattr ? 1 : 0,
-			 hide_proc_enabled ? 1 : 0, proc_name_count);
+			 "scope=%s targets=%u\n"
+			 "enabled=%d\n",
+			 scope_mode, target_count,
+			 hide_dirents ? 1 : 0);
 }
 
 static struct kernel_param_ops status_ops = {
