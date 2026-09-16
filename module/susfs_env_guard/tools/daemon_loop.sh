@@ -12,11 +12,6 @@ USER_PATHS_FILE="$DATA_DIR/user_hidden_paths.txt"
 mkdir -p "$MODDIR/webroot"
 echo "$$" > "$PID_FILE"
 trap 'rm -f "$PID_FILE"' EXIT
-# ---------- 伪装进程名 + 自我隐藏 ----------
-# 把 comm 改成看起来像内核线程的名字，避免 ps -A | grep daemon 发现
-# 注意：comm 最长 15 字符；kcompactd99 不存在于标准内核
-}
-self_hide_proc
 LAST_ACTION=""
 LAST_ACTION_TIME=0
 gprop() { getprop "$1" 2>/dev/null; }
