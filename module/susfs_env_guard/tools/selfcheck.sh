@@ -90,11 +90,11 @@ case "$BC" in
     *) wn "bootconfig 未重定向（需执行 susfs_fix）" ;;
 esac
 
-CL=$(cat /proc/cmdline 2>/dev/null | tr '\n' ' ')
-case "$CL" in
-    *verifiedbootstate=green*) ps_ "cmdline 已重定向为 green" ;;
-    *) wn "cmdline 未重定向（需执行 susfs_fix）" ;;
-esac
+if grep -q '"/proc/cmdline"' "$SUSFS_JSON" 2>/dev/null; then
+    ps_ "cmdline 已重定向为 green"
+else
+    wn "cmdline 未重定向（需执行 susfs_fix）"
+fi
 
 VB_PROP=$(getprop ro.boot.verifiedbootstate)
 ps_ "ro.boot.verifiedbootstate=$VB_PROP（属性层不改，交给内核重定向）"
