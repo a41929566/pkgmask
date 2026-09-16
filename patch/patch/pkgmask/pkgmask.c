@@ -731,7 +731,9 @@ static int __init xk7a9f_init(void)
 	if (ret)
 		pr_info(PM_LOG_PREFIX "initial perm/getattr hooks skipped (%d)\n", ret);
 
+#ifdef CONFIG_PKGMASK_HWID
 	xw3e8b_init();
+#endif
 
 	pr_info(PM_LOG_PREFIX "v4.11 built-in initialized (nothing hidden until configured)\n");
 	return 0;
@@ -739,7 +741,9 @@ static int __init xk7a9f_init(void)
 
 static void __exit xk7a9f_exit(void)
 {
+#ifdef CONFIG_PKGMASK_HWID
 	xw3e8b_exit();
+#endif
 	reset_state();
 	pr_info(PM_LOG_PREFIX "unloaded\n");
 }
