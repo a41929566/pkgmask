@@ -131,7 +131,7 @@ jobs:
             realme_GT7pro_Speed)
               echo "SCHED_FILE=oneplus_ace_6" >> $GITHUB_ENV
               ;;
-            realme_GT8)-
+            realme_GT8)
               echo "SCHED_FILE=oneplus_ace_6" >> $GITHUB_ENV
           esac
           if [ -z "${{ github.event.inputs.custom_kernel_suffix }}" ]; then
