@@ -168,7 +168,7 @@ rand_serial8() {
     s=$(rand_hex 4)
     # 兜底：确保恰好 8 位
     while [ ${#s} -lt 8 ]; do s="${s}0"; done
-    echo "$s" | cut -c1-8
+        echo "$s" | cut -c1-8
 }
 # 一加 incremental 形态：纯数字（如 U.PR/日期+序号），这里生成 7-10 位数字
 rand_incremental() {
