@@ -578,7 +578,7 @@ jobs:
             exit 0
           fi
           # 去掉可能的 static 修饰
-          sed -i 's/^static \(struct selinux_kernel_status[[:space:]]\+sel_handle_status_ops\)/\1/' "$FILE"
+          sed -i 's/^static \(const struct file_operations sel_handle_status_ops\)/\1/' "$FILE"
           # 文件末尾追加导出
           printf '\n/* ReSukiSU: static export for KALLSYMS_ALL=n */\nEXPORT_SYMBOL_GPL(sel_handle_status_ops);\n' >> "$FILE"
           echo "[OK] 已追加 sel_handle_status_ops 导出"
