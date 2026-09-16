@@ -52,7 +52,6 @@ h1{font-size:22px;font-weight:500;letter-spacing:.1px;margin-bottom:2px}
 .btn.danger{background:var(--errorContainer);color:var(--onErrorContainer)}
 .btnrow{display:flex;gap:8px}
 .btnrow .btn{flex:1}
-.btn small{display:block;font-size:11px;opacity:.75;font-weight:400;margin-top:2px}
 .switch{position:relative;width:50px;height:28px;flex:0 0 50px;cursor:pointer}
 .switch input{display:none}
 .slider{position:absolute;inset:0;background:var(--surfaceContainerHighest);border-radius:28px;transition:.2s}
@@ -89,6 +88,14 @@ input:focus{border-color:var(--primary)}
 .check-line .name{font-weight:500;margin-bottom:2px}
 .check-line .reason{color:var(--onSurfaceVariant);font-size:11.5px;line-height:1.5}
 .check-line .val{font-family:ui-monospace,monospace;font-size:11px;color:var(--onSurfaceVariant);margin-top:2px;word-break:break-all}
+.path-item{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--outlineVariant);font-size:12.5px}
+.path-item:last-child{border:none}
+.path-item .p{flex:1;word-break:break-all;font-family:ui-monospace,monospace;font-size:11.5px}
+.path-item .del{flex:0 0 auto;background:var(--errorContainer);color:var(--onErrorContainer);
+  border:0;border-radius:999px;padding:6px 12px;font-size:11.5px;font-weight:500;cursor:pointer;font-family:inherit}
+.path-item .del:active{transform:scale(.96)}
+.badge{display:inline-block;background:var(--surfaceContainerHigh);color:var(--onSurfaceVariant);
+  padding:1px 6px;border-radius:6px;font-size:10px;margin-left:4px}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--onSurface);
   color:var(--surface);padding:10px 20px;border-radius:999px;font-size:13px;opacity:0;
   transition:.25s;pointer-events:none;z-index:99;max-width:90%}
@@ -96,9 +103,6 @@ input:focus{border-color:var(--primary)}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid currentColor;
   border-top-color:transparent;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px;margin-right:6px}
 @keyframes sp{to{transform:rotate(360deg)}}
-.compare{display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;margin-top:6px}
-.compare div{background:var(--surfaceContainerLowest);border-radius:8px;padding:6px 8px;word-break:break-all}
-.compare b{display:block;color:var(--onSurfaceVariant);font-size:10px;margin-bottom:2px;font-weight:500}
 .empty{color:var(--onSurfaceVariant);font-size:12px;text-align:center;padding:16px 0}
 </style>
 </head>
@@ -115,6 +119,7 @@ input:focus{border-color:var(--primary)}
   <button class="tab" data-p="id">ID 伪装</button>
   <button class="tab" data-p="app">应用隐藏</button>
   <button class="tab" data-p="proc">进程隐藏</button>
+  <button class="tab" data-p="suspath">路径隐藏</button>
 </div>
 
 <!-- ============ Tab 1: SUSFS 修复 ============ -->
@@ -209,11 +214,30 @@ input:focus{border-color:var(--primary)}
   </div>
 </div>
 
+<!-- ============ Tab 5: 路径隐藏 ============ -->
+<div class="page" id="page-suspath">
+  <div class="card">
+    <h3>添加自定义路径</h3>
+    <input type="text" id="newSusPath" placeholder="/data/local/tmp/mytool">
+    <button class="btn primary" onclick="addSusPath()">添加并应用</button>
+    <div class="hint">路径必须是存在的文件或目录。添加后立即对非 root 进程隐藏。</div>
+  </div>
+  <div class="card">
+    <h3>用户手动添加 <span class="tag" id="userPathCount">–</span></h3>
+    <div id="userPathList"><div class="empty">无</div></div>
+    <div class="hint">保存位置：/data/adb/susfs_env_guard/user_hidden_paths.txt</div>
+  </div>
+  <div class="card">
+    <h3>内核当前注册 <span class="tag" id="regPathCount">–</span></h3>
+    <div id="registeredPathList" style="text-align:left;font-size:11.5px;padding:4px 0;font-family:ui-monospace,monospace;word-break:break-all;line-height:1.8">–</div>
+    <div class="hint">包含脚本内置路径 + 你在上方添加的路径。内置路径由脚本维护，无需手动添加。</div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 </div>
 
 <script>
-/* ============ 桥接 ============ */
 const ACTION_FILE = "/data/adb/susfs_env_guard/action.txt";
 const MOD = "/data/adb/modules/susfs_env_guard";
 
@@ -238,7 +262,6 @@ async function shExec(cmd){
   }catch(e){ return ""; }
 }
 
-/* ============ 动作下发 ============ */
 async function act(action){
   await shExec(`echo "${action}" > ${ACTION_FILE}`);
   toast("已下发："+action);
@@ -250,13 +273,7 @@ function toast(m){
   t.textContent=m; t.classList.add("show");
   clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("show"), 1600);
 }
-function busy(btn, on, txt){
-  if(on){ btn.dataset.old=btn.innerHTML; btn.disabled=true;
-    btn.innerHTML='<span class="spin"></span>'+(txt||"执行中…"); }
-  else { btn.disabled=false; btn.innerHTML=btn.dataset.old||btn.innerHTML; }
-}
 
-/* ============ Tab 切换 ============ */
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
   document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
   document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));
@@ -264,7 +281,6 @@ document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
   document.getElementById("page-"+t.dataset.p).classList.add("active");
 });
 
-/* ============ 状态解析 ============ */
 let S = null;
 let allPkgs = null;
 let selA = new Set();
@@ -277,19 +293,18 @@ function setText(id, txt, cls){
   if(cls) e.className = "v " + cls;
 }
 function eq(a,b){ return a&&b&&a===b; }
+function esc(s){ return (s==null?"":String(s)).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
 function render(){
   if(!S) return;
-  // 自检
   const sc = S.selfcheck||{};
   document.getElementById("scPass").textContent = sc.pass??"–";
   document.getElementById("scWarn").textContent = sc.warn??"–";
   document.getElementById("scFail").textContent = sc.fail??"–";
 
-  // SUSFS 检测项
   const ss = S.susfs||{};
   document.getElementById("susfsVer").textContent = ss.state==="ready"?ss.version:(ss.state||"未知");
-  const checks = (ss.check||"").split("\n").filter(x=>x.trim());
+  const checks = (ss.check||"").split("\\n").filter(x=>x.trim());
   const box = document.getElementById("susfsChecks");
   if(checks.length){
     box.innerHTML = checks.map(line=>{
@@ -311,7 +326,6 @@ function render(){
     box.innerHTML = '<div class="empty">暂无检测项</div>';
   }
 
-  // 硬件 ID
   const hw = S.hwid||{};
   const hookOn = hw.hook_active==="1";
   const enOn = hw.enabled==="1";
@@ -338,33 +352,27 @@ function render(){
   r=pair(hw.bmac,hw.fake_bmac); setText("id_bmac",r[0],r[1]);
   r=pair(hw.cur_aid,hw.fake_aid); setText("id_aid",r[0],r[1]);
 
-  // 生效 App 勾选
   renderIdApps(true);
 
-  // 应用隐藏
   const pm = S.pkgmask||{};
   setText("pm_scope", pm.scope||"–");
   setText("pm_deny", pm.deny_uids||"（空）");
   setText("pm_paths", pm.target_paths||"（空）");
   setText("pm_hg", pm.hook_getdents||"–", pm.hook_getdents==="1"?"ok":"bad");
   setText("pm_hd", pm.hide_dirents||"–", pm.hide_dirents==="1"?"ok":"bad");
-  if(pm.targets && selA.size===0) pm.targets.split(/\s+/).forEach(x=>x&&selA.add(x));
-  if(pm.hide_pkgs && selB.size===0) pm.hide_pkgs.split(/\s+/).forEach(x=>x&&selB.add(x));
+  if(pm.targets && selA.size===0) pm.targets.split(/\\s+/).forEach(x=>x&&selA.add(x));
+  if(pm.hide_pkgs && selB.size===0) pm.hide_pkgs.split(/\\s+/).forEach(x=>x&&selB.add(x));
   renderPkgA(); renderPkgB();
   renderVerify();
 
-  // 进程隐藏
   setText("procHideTag", pm.hide_proc_names||"（无）");
   document.getElementById("hiddenProcs").textContent = pm.hide_proc_names||"（无）";
   renderProcs();
 
-  // 连接状态
+  renderSusPaths();
+
   document.getElementById("liveTag").textContent = "运行中";
 }
-
-function esc(s){ return (s==null?"":String(s)).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
-
-/* ============ SUSFS 修复 tab 的操作 ============ */
 
 /* ============ ID 伪装 tab ============ */
 function renderIdApps(onlyRefreshSel){
@@ -463,6 +471,45 @@ function toggleProc(comm,on){
   else act("prochide_del:"+comm);
 }
 
+/* ============ 路径隐藏 tab ============ */
+function renderSusPaths(){
+  const sp = S.sus_path||{};
+  const user = (sp.user||"").split("|").filter(Boolean);
+  const registered = (sp.registered||"").split("|").filter(Boolean);
+
+  document.getElementById("userPathCount").textContent = `${user.length} 条`;
+  document.getElementById("regPathCount").textContent = `${registered.length} 条`;
+
+  const ubox = document.getElementById("userPathList");
+  if(user.length){
+    ubox.innerHTML = user.map(p=>
+      `<div class="path-item"><span class="p">${esc(p)}</span><button class="del" onclick="delSusPath('${esc(p)}')">删除</button></div>`
+    ).join("");
+  } else {
+    ubox.innerHTML = '<div class="empty">无</div>';
+  }
+
+  const rbox = document.getElementById("registeredPathList");
+  if(registered.length){
+    rbox.innerHTML = registered.map(p=>`<div>• ${esc(p)}</div>`).join("");
+  } else {
+    rbox.innerHTML = '<div class="empty">内核暂无注册路径</div>';
+  }
+}
+
+function addSusPath(){
+  const inp = document.getElementById("newSusPath");
+  const p = (inp.value||"").trim();
+  if(!p){ toast("请输入路径"); return; }
+  if(p.charAt(0)!=="/"){ toast("路径必须以 / 开头"); return; }
+  act("suspath_add:"+p);
+  inp.value = "";
+}
+
+function delSusPath(p){
+  act("suspath_del:"+p);
+}
+
 /* ============ 状态刷新 ============ */
 async function refresh(){
   try{
@@ -475,8 +522,8 @@ async function loadPackages(){
   let txt = await shExec("pm list packages -U");
   if(txt){
     allPkgs = [];
-    txt.split("\n").forEach(l=>{
-      const m = l.match(/package:(\S+)\s+uid:(\d+)/);
+    txt.split("\\n").forEach(l=>{
+      const m = l.match(/package:(\\S+)\\s+uid:(\\d+)/);
       if(m) allPkgs.push({packageName:m[1], uid:m[2]});
     });
   }
@@ -495,7 +542,6 @@ async function loadPackages(){
   renderPkgA(); renderPkgB(); renderIdApps();
 }
 
-/* ============ 启动 ============ */
 refresh();
 loadPackages();
 setInterval(refresh, 2500);
