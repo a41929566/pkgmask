@@ -251,28 +251,7 @@ handle_action() {
             ;;
         # ---- SUSFS ----
         susfs_fix)
-            local KS
-            KS=$(command -v ksu_susfs 2>/dev/null || \
-                 for p in /data/adb/ksu/bin/ksu_susfs /data/adb/ksud/bin/ksu_susfs; do
-                     [ -x "$p" ] && { echo "$p"; break; }
-                 done)
-            # 载入配置和默认值，避免 SPOOF_CMDLINE 为空
-            . "$CONF" 2>/dev/null
-            : "${SPOOF_CMDLINE:=androidboot.verifiedbootstate=green androidboot.vbmeta.device_state=locked androidboot.selinux=enforcing}"
-            if [ -n "$KS" ]; then
-                local spoof_txt="$MODDIR/config/cmdline_spoof.txt"
-                local fake_txt="$MODDIR/config/cmdline_fake.txt"
-                [ -s "$spoof_txt" ] || printf '%s\n' "$SPOOF_CMDLINE" > "$spoof_txt"
-                [ -s "$fake_txt" ] || echo "$SPOOF_CMDLINE" > "$fake_txt"
-                "$KS" config cmdline_or_bootconfig remove 2>/dev/null
-                "$KS" config cmdline_or_bootconfig add "$spoof_txt" 2>/dev/null
-                "$KS" set_cmdline_or_bootconfig "$spoof_txt" 2>/dev/null
-                "$KS" config open_redirect add /proc/cmdline "$fake_txt" 3 2>/dev/null
-                "$KS" add_open_redirect /proc/cmdline "$fake_txt" 3 2>/dev/null
-                log 2 "susfs_fix executed"
-            else
-                log 1 "susfs_fix: ksu_susfs not found"
-            fi
+            sh "$MODDIR/tools/susfs_fix.sh" apply
             ;;
         susfs_check)
             log 2 "susfs_check requested (will be embedded in status.json)"
