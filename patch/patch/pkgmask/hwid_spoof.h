@@ -11,7 +11,7 @@
 #ifndef __HWID_SPOOF_H__
 #define __HWID_SPOOF_H__
 
-int  hwid_spoof_init(void);
-void hwid_spoof_exit(void);
+int  xw3e8b_init(void);
+void xw3e8b_exit(void);
 
 #endif /* __HWID_SPOOF_H__ */
