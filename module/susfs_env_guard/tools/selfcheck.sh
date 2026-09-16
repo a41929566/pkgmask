@@ -1,33 +1,41 @@
 #!/system/bin/sh
-# SUSFS Env Guard v3.0 - 自检诊断（POSIX sh / mksh 兼容，禁止 declare -A）
-# 用法: selfcheck.sh  （输出文本 + 写 selfcheck_result.json）
+# SUSFS Env Guard v3.0 - 自检诊断
+# 输出：stdout 文本 + selfcheck_result.json（数字汇总）+ selfcheck_items.tsv（逐项）
 
 . "${0%/*}/lib_common.sh"
 
+ITEM_FILE="$RUN_DIR/selfcheck_items.tsv"
+: > "$ITEM_FILE"
+
 PASS=0; WARN=0; FAIL=0
-ok(){ PASS=$((PASS+1)); }
-wn(){ WARN=$((WARN+1)); echo "[WARN] $*"; }
-no(){ FAIL=$((FAIL+1)); echo "[FAIL] $*"; }
-ps_(){ PASS=$((PASS+1)); echo "[PASS] $*"; }
+
+decl_item() {
+    printf '%s\t%s\n' "$1" "$2" >> "$ITEM_FILE"
+}
+
+ok(){  PASS=$((PASS+1)); decl_item ok   "$*"; }
+wn(){  WARN=$((WARN+1)); echo "[WARN] $*"; decl_item warn "$*"; }
+no(){  FAIL=$((FAIL+1)); echo "[FAIL] $*"; decl_item fail "$*"; }
+ps_(){ PASS=$((PASS+1)); echo "[PASS] $*"; decl_item ok   "$*"; }
 
 echo "===== SUSFS Env Guard v3.0 自检 $(date) ====="
 
 # ============================================================
-# 1. 文件完整性（补充新增文件）
+# 1. 文件完整性
 # ============================================================
 echo "--- 文件完整性 ---"
 for f in post-fs-data.sh service.sh customize.sh module.prop sepolicy.rule \
          tools/lib_common.sh tools/props_spoof.sh tools/randomize.sh \
          tools/pkgmask_setup.sh tools/appops_setup.sh tools/daemon_loop.sh \
-         tools/process_hide.sh tools/run.sh tools/run_verify.sh \
-         config/spoof.conf.example webroot/index.html; do
-    if [ -f "$MODDIR/$f" ]; then ok; else no "缺失 $f"; fi
+         tools/process_hide.sh tools/run.sh tools/susfs_fix.sh \
+         config/spoof.conf.example config/bootconfig_spoof.txt \
+         webroot/index.html; do
+    if [ -f "$MODDIR/$f" ]; then ok; else no "缺失文件 $f"; fi
 done
-[ -f "$CONF" ] && ps_ "配置存在" || wn "配置缺失(用默认)"
+[ -f "$CONF" ] && ps_ "配置文件存在" || wn "配置文件缺失（用默认）"
 
 # ============================================================
-# 2. 属性伪装（安全版：只检查安全区属性）
-#    ⚠️ 不再检查 ro.boot.verifiedbootstate 等，因为模块不再修改它们
+# 2. 属性伪装（安全区）
 # ============================================================
 echo "--- 属性伪装（安全区） ---"
 init_feature_flags
@@ -36,129 +44,92 @@ HWID_ON=$(get_config spoof_hwid_enabled 0)
 AID_ON=$(get_config spoof_android_id 0)
 
 G=0
-if [ "$PROPS_ON" = 1 ] || [ "$HWID_ON" = 1 ] || [ "$AID_ON" = 1 ]; then
-    G=1
-fi
+if [ "$PROPS_ON" = 1 ] || [ "$HWID_ON" = 1 ] || [ "$AID_ON" = 1 ]; then G=1; fi
 
 if [ "$PROPS_ON" = 1 ]; then
-    # 只检查安全区属性（非 ro.boot.*）
     TMPF="$RUN_DIR/.sc_props"; : > "$TMPF"
-    echo "ro.debuggable:0
-ro.secure:1
-ro.build.tags:release-keys
-ro.build.type:user
-sys.oem_unlock_allowed:0" | while IFS=: read -r p e; do
+    printf 'ro.debuggable:0\nro.secure:1\nro.build.tags:release-keys\nro.build.type:user\nsys.oem_unlock_allowed:0\n' | while IFS=: read -r p e; do
         a=$(getprop "$p")
         if [ "$a" = "$e" ]; then
-            echo P >> "$TMPF"
+            echo "P|属性 $p=$a" >> "$TMPF"
         else
-            echo F >> "$TMPF"
-            echo "[FAIL] $p=$a 期望 $e" >> "$TMPF.log"
+            echo "F|属性 $p 当前=$a 期望=$e" >> "$TMPF"
         fi
     done
-    P=$(grep -c P "$TMPF" 2>/dev/null); F=$(grep -c F "$TMPF" 2>/dev/null)
-    PASS=$((PASS+P)); FAIL=$((FAIL+F))
-    cat "$TMPF.log" 2>/dev/null
-    rm -f "$TMPF" "$TMPF.log"
-    [ "$F" = "0" ] && ps_ "安全区属性全部符合期望（5/5）" || true
+    while IFS='|' read -r st msg; do
+        case "$st" in
+            P) ps_ "$msg" ;;
+            F) no "$msg" ;;
+        esac
+    done < "$TMPF"
+    rm -f "$TMPF"
 else
     wn "属性伪装未启用（显示真值属预期）"
 fi
 
 # ============================================================
-# 3. 引导状态伪装（内核重定向，不通过属性层）
-#    检查 /proc/bootconfig 和 /proc/cmdline 是否被 SUSFS 重定向
+# 3. 引导状态伪装
 # ============================================================
 echo "--- 引导状态伪装（内核层） ---"
 BC=$(cat /proc/bootconfig 2>/dev/null | tr '\n' ' ')
 case "$BC" in
-    *verifiedbootstate=green*|*device_state=locked*)
-        ps_ "bootconfig 内核重定向生效"
-        ;;
+    *verifiedbootstate*green*)
+        ps_ "bootconfig 已重定向为 green" ;;
     *)
-        wn "bootconfig 内核重定向未生效（正常：需先执行一次 susfs_fix）"
-        ;;
+        wn "bootconfig 未重定向（需执行 susfs_fix）" ;;
 esac
 
 CL=$(cat /proc/cmdline 2>/dev/null | tr '\n' ' ')
 case "$CL" in
     *verifiedbootstate=green*)
-        ps_ "cmdline 对普通进程已重定向"
-        ;;
+        ps_ "cmdline 已重定向为 green" ;;
     *)
-        wn "cmdline 未重定向（正常：open_redirect 由 susfs_fix 注入）"
-        ;;
+        wn "cmdline 未重定向（需执行 susfs_fix）" ;;
 esac
 
-# 属性层不再检查 ro.boot.verifiedbootstate，因为它不应该被我们改
 VB_PROP=$(getprop ro.boot.verifiedbootstate)
-ps_ "ro.boot.verifiedbootstate=$VB_PROP（不改动，交给内核重定向）"
+ps_ "ro.boot.verifiedbootstate=$VB_PROP（属性层不改，交给内核重定向）"
 
 # ============================================================
-# 4. 硬件只读 ID（内核 hwid_spoof）
+# 4. 硬件只读 ID
 # ============================================================
-echo "--- 硬件只读ID ---"
+echo "--- 硬件只读 ID ---"
 if [ -f "$HWID_SYSFS/hwid_enabled" ]; then
     HE=$(cat "$HWID_SYSFS/hwid_enabled" 2>/dev/null)
     if [ "$HWID_ON" = 1 ] && bool_on "$HE"; then
         HS=$(cat "$HWID_SYSFS/hwid_status" 2>/dev/null)
-        echo "$HS" | grep -q 'hook_active=1' && ps_ "内核 hwid hook 已注册" \
-            || no "hwid hook 未注册（kretprobe 不可用或未链接）"
-        echo "$HS" | grep -q '^wlan_mac=..' && ps_ "内核 hwid 已加载假MAC" \
+        echo "$HS" | grep -q 'hook_active=1' && ps_ "hwid hook 已注册" \
+            || no "hwid hook 未注册（kretprobe 不可用）"
+        echo "$HS" | grep -q '^wlan_mac=..' && ps_ "hwid 已加载假 MAC" \
             || no "hwid 假值未就位"
 
         . "$DATA_DIR/fake_profile.conf" 2>/dev/null
-        HWID_SCOPE=$(get_config hwid_uids "")
-        if [ -n "$HWID_SCOPE" ]; then
-            wn "hwid_uids 已限定为 [$HWID_SCOPE]；root 自检读取不代表目标应用视角"
-        fi
-
-        ACTUAL_WMAC=""
-        for f in /sys/class/net/wlan*/address /sys/class/net/wlp*/address; do
-            [ -r "$f" ] && { ACTUAL_WMAC=$(cat "$f" 2>/dev/null); break; }
-        done
-        if [ -n "$HWID_SCOPE" ]; then
-            wn "跳过 root WLAN MAC 命中判断（需用目标 UID 验证）"
-        elif [ "$ACTUAL_WMAC" = "$fake_wmac" ]; then
-            ps_ "WLAN MAC 读取已替换"
-        else
-            wn "WLAN MAC 读取未匹配（当前=${ACTUAL_WMAC:-N/A}）"
-        fi
-
-        ACTUAL_SOC=$(cat /sys/devices/soc0/serial_number 2>/dev/null)
-        if [ -n "$HWID_SCOPE" ]; then
-            wn "跳过 root SoC Serial 命中判断（需用目标 UID 验证）"
-        else
-            case "$ACTUAL_SOC" in
-                "$fake_soc"*) ps_ "SoC Serial 实际读取已替换" ;;
-                *) wn "SoC Serial 实际读取未匹配（当前=$ACTUAL_SOC）" ;;
-            esac
-        fi
+        [ "$fake_cpu" = "$fake_soc" ] && ps_ "SoC == cpuinfo Serial（自洽）" \
+            || no "SoC != cpuinfo Serial（不自洽）"
+        _w_oui=$(echo "$fake_wmac" | cut -d: -f1-3)
+        _b_oui=$(echo "$fake_bmac" | cut -d: -f1-3)
+        [ "$_w_oui" = "$_b_oui" ] && ps_ "WiFi 和 BT 同 OUI（自洽）" \
+            || no "WiFi OUI != BT OUI（不自洽）"
     else
-        wn "hwid_spoof 未使能(enabled=$HE；可接受值为 1/Y)"
+        wn "hwid_spoof 未使能（enabled=$HE）"
     fi
 else
-    wn "内核无 hwid_spoof（未找到 $HWID_SYSFS）"
+    wn "内核无 hwid_spoof"
 fi
 
 # ============================================================
-# 5. pkgmask（应用隐藏 + 进程隐藏）
+# 5. pkgmask
 # ============================================================
 echo "--- pkgmask ---"
 if [ -d "$PKG_SYSFS" ]; then
     DU=$(cat "$PKG_SYSFS/deny_uids" 2>/dev/null)
     TP=$(cat "$PKG_SYSFS/target_paths" 2>/dev/null)
-    [ -n "$DU" ] && ps_ "pkgmask deny_uids=$DU" || wn "pkgmask 无 deny_uids（检测方未装？）"
+    [ -n "$DU" ] && ps_ "pkgmask deny_uids=$DU" || wn "pkgmask 无 deny_uids"
     [ -n "$TP" ] && ps_ "pkgmask target_paths 已配置" || wn "pkgmask 无 target_paths"
-
     HG=$(cat "$PKG_SYSFS/hook_getdents" 2>/dev/null)
     HD=$(cat "$PKG_SYSFS/hide_dirents" 2>/dev/null)
-    if [ "$HG" = "1" ] && [ "$HD" = "1" ]; then
-        ps_ "内核目录隐藏已启用（防零宽扫盘关键）"
-    else
-        no "hook_getdents=$HG hide_dirents=$HD 未同时启用"
-    fi
-
+    [ "$HG" = "1" ] && [ "$HD" = "1" ] && ps_ "目录隐藏已启用（防零宽扫盘）" \
+        || no "hook_getdents=$HG hide_dirents=$HD 未同时启用"
     HP=$(cat "$PKG_SYSFS/hide_proc_enabled" 2>/dev/null)
     HN=$(cat "$PKG_SYSFS/hide_proc_names" 2>/dev/null)
     [ "$HP" = "1" ] && ps_ "进程隐藏已启用：$HN" || wn "进程隐藏未启用"
@@ -167,22 +138,34 @@ else
 fi
 
 # ============================================================
-# 6. SUSFS
+# 6. SUSFS 用户态配置
 # ============================================================
 echo "--- SUSFS ---"
-SUSFS_DIR="/sys/module/susfs"
-if ls -ld "$SUSFS_DIR" >/dev/null 2>&1; then
-    ps_ "SUSFS 模块目录存在"
-    SUSFS_FILES=$(find "$SUSFS_DIR" -maxdepth 2 -type f 2>/dev/null | head -n 1)
-    [ -n "$SUSFS_FILES" ] && ps_ "SUSFS 节点可读取: $SUSFS_FILES" \
-        || wn "SUSFS 目录存在但未找到可读取节点"
-    if [ -f "$SUSFS_DIR/version" ]; then
-        ps_ "SUSFS $(cat "$SUSFS_DIR/version" 2>/dev/null)"
+if [ -f "$SUSFS_JSON" ]; then
+    ps_ "SUSFS .susfs.json 存在"
+
+    if grep -q '"cmdline_or_bootconfig"' "$SUSFS_JSON" 2>/dev/null; then
+        ps_ "cmdline_or_bootconfig 已配置"
     else
-        wn "SUSFS version 节点不存在（可能已启用隐藏版本信息）"
+        wn "cmdline_or_bootconfig 未配置"
     fi
+
+    if grep -q '"avc_log_spoofing": true' "$SUSFS_JSON" 2>/dev/null; then
+        ps_ "AVC 日志伪装已启用"
+    else
+        wn "AVC 日志伪装未启用"
+    fi
+
+    if grep -q '"hide_sus_mnts_for_non_su_procs": true' "$SUSFS_JSON" 2>/dev/null; then
+        ps_ "非 root 挂载隐藏已启用"
+    else
+        wn "非 root 挂载隐藏未启用"
+    fi
+
+    pc=$(grep -c '"path"' "$SUSFS_JSON" 2>/dev/null)
+    [ "$pc" -gt 0 ] && ps_ "路径循环隐藏已注册 $pc 条" || wn "路径循环隐藏未注册"
 else
-    wn "SUSFS 节点不可见（可能为内置或隐藏；不能仅凭 /sys/module 判定）"
+    no "SUSFS .susfs.json 不存在"
 fi
 
 # ============================================================
@@ -201,5 +184,5 @@ cat > "$DATA_DIR/selfcheck_result.json" << EOF
   "global": "$G", "kernel": "$(uname -r)" }
 EOF
 chmod 644 "$DATA_DIR/selfcheck_result.json" 2>/dev/null
-
+chmod 644 "$ITEM_FILE" 2>/dev/null
 exit 0
