@@ -22,8 +22,6 @@ sh "$MODDIR/tools/props_spoof.sh" restore 2>/dev/null
 sh "$MODDIR/tools/randomize.sh" restore 2>/dev/null
 sh "$MODDIR/tools/pkgmask_setup.sh" restore 2>/dev/null
 sh "$MODDIR/tools/appops_setup.sh" restore 2>/dev/null
-# 卸载用户态 hwid bind mount
-sh "$MODDIR/tools/hwid_userspace.sh" umount 2>/dev/null
 
 # 删除本模块数据
 rm -rf /data/adb/susfs_env_guard 2>/dev/null
