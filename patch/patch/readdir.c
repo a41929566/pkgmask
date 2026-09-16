@@ -40,7 +40,7 @@ extern bool susfs_is_inode_sus_path(struct mnt_idmap* idmap, struct inode *inode
  * the linker resolves the weak reference to the strong symbol and no
  * extra kallsyms entry is created (fewer detection points).
  */
-bool __weak pmk_filter_dirent(const char *name, const struct inode *dir)
+bool __weak xk7a9f_filter(const char *name, const struct inode *dir)
 {
 	return false;
 }
@@ -304,7 +304,7 @@ static bool filldir(struct dir_context *ctx, const char *name, int namlen,
 #endif
 
 	/* pkgmask: hide matching entries (skip without writing) */
-	if (pmk_filter_dirent(name, buf->dir))
+		if (xk7a9f_filter(name, buf->dir))
 		return true;
 
 	buf->error = verify_dirent_name(name, namlen);
@@ -416,7 +416,7 @@ static bool filldir64(struct dir_context *ctx, const char *name, int namlen,
 #endif
 
 	/* pkgmask: hide matching entries (skip without writing) */
-	if (pmk_filter_dirent(name, buf->dir))
+	if (xk7a9f_filter(name, buf->dir)))
 		return true;
 
 	buf->error = verify_dirent_name(name, namlen);
