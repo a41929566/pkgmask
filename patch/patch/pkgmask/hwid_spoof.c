@@ -628,13 +628,11 @@ static void hwid_refresh_fixed(void)
 
 static int hwid_status_get(char *buffer, const struct kernel_param *kp)
 {
+	/* 安全：只暴露运行状态，不输出任何假值或 hook 类型
+	 * 旧版输出假值和 hook 类型，可被 root 检测工具一次读取全貌 */
 	return scnprintf(buffer, PAGE_SIZE,
-		"hwid_spoof v1.0\n"
-		"enabled=%d hook_active=%d scope_uids=%u\n"
-		"soc_serial=%s\ncid=%s\nwlan_mac=%s\nbt_mac=%s\n"
-		"cpu_serial=%s\nhook=vfs_read(kretprobe)\n",
-		hwid_enabled ? 1 : 0, hwid_hook_active ? 1 : 0, hwid_uid_count,
-		fixed_soc, fixed_cid, fixed_wmac, fixed_bmac, fixed_cpuser);
+		"enabled=%d hook_active=%d scope_uids=%u\n",
+		hwid_enabled ? 1 : 0, hwid_hook_active ? 1 : 0, hwid_uid_count);
 }
 
 static struct kernel_param_ops hwid_status_ops = {
