@@ -358,8 +358,11 @@ static bool rewrite_cpuinfo(char *buf, size_t len)
 
 static bool rewrite_mac_scan(char *buf, size_t len, const char *mac)
 {
-	size_t i;
-	bool changed = false;
+    size_t i;
+    bool changed = false;
+
+    if (!mac || strlen(mac) < 12)
+        return false;
 
 	for (i = 0; i + 17 <= len; ) {
 		if (is_mac_char(buf[i]) &&
