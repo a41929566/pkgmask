@@ -6,14 +6,10 @@
 #   ② 通过 pkgmask 的 hide_proc_names 节点，只影响 /proc 读取结果
 #   ③ 支持 WebUI 动态添加/移除隐藏项
 #
-# 【依赖】pkgmask 内核模块（v4.11+），hide_proc_enabled / hide_proc_names 节点
-#
-# 【用法】
-#   process_hide.sh apply      从配置应用隐藏列表
-#   process_hide.sh list       列出当前所有进程（供 WebUI 选择）
-#   process_hide.sh status     查看当前隐藏状态
-#   process_hide.sh add <comm> 添加一个进程到隐藏列表
-#   process_hide.sh del <comm> 从隐藏列表移除
+# 【关键修复 v3.1】
+#   - load_procs：\s → [[:space:]]（toybox grep 兼容）
+#   - do_apply：写入 hide_proc_names 后必须触发 reload
+#     否则内核只更新 buffer，proc_names[] 数组不会重新解析
 
 . "${0%/*}/lib_common.sh"
 
@@ -21,28 +17,36 @@ PROC_CONF="$DATA_DIR/hidden_procs.txt"
 PKG_SYSFS_DIR="/sys/module/pkgmask/parameters"
 HIDE_NODE="$PKG_SYSFS_DIR/hide_proc_names"
 EN_NODE="$PKG_SYSFS_DIR/hide_proc_enabled"
+RELOAD_NODE="$PKG_SYSFS_DIR/reload"
 
 # ---------- 内核支持检测 ----------
 kernel_supported() {
-    [ -f "$HIDE_NODE" ] && [ -f "$EN_NODE" ]
+    [ -e "$HIDE_NODE" ] && [ -e "$EN_NODE" ] && [ -e "$RELOAD_NODE" ]
 }
 
 # ---------- 读取配置的进程列表 ----------
 load_procs() {
     [ -f "$PROC_CONF" ] || : > "$PROC_CONF"
     # 去空行、去注释、去重、每行一个 comm
-    grep -v '^\s*#' "$PROC_CONF" 2>/dev/null | grep -v '^\s*$' | sort -u
+    grep -v '^[[:space:]]*#' "$PROC_CONF" 2>/dev/null \
+        | grep -v '^[[:space:]]*$' \
+        | sort -u
 }
 
-# ---------- 写入内核节点（pkgmask 的 hide_proc_names 用逗号分隔） ----------
+# ---------- 写入内核节点 ----------
+# 注意：写 hide_proc_names 只改 buffer，必须写 reload 才会被 parse_hide_proc_names() 解析
 write_to_kernel() {
     local list="$1"
-    # pkgmask 的 hide_proc_names 接受逗号分隔的字符串；空则写空
     if [ -w "$HIDE_NODE" ]; then
         printf '%s' "$list" > "$HIDE_NODE" 2>/dev/null
         return $?
     fi
     return 1
+}
+
+# 触发内核 reload（重新解析所有参数，填充 proc_names[] 数组）
+trigger_reload() {
+    [ -w "$RELOAD_NODE" ] && echo 1 > "$RELOAD_NODE" 2>/dev/null
 }
 
 # ---------- apply：从配置应用到内核 ----------
@@ -60,9 +64,10 @@ do_apply() {
     procs=$(load_procs | tr '\n' ',' | sed 's/,$//')
 
     if [ "$on" != "1" ]; then
-        # 功能关闭：清空节点
+        # 功能关闭：清空节点 + 触发 reload 让 proc_names[] 也清空
         write_to_kernel ""
         echo 0 > "$EN_NODE" 2>/dev/null
+        trigger_reload
         log 2 "process_hide: disabled by config, cleared"
         echo "PROCESS_HIDE=DISABLED_BY_CONFIG"
         return 0
@@ -71,14 +76,16 @@ do_apply() {
     if [ -z "$procs" ]; then
         write_to_kernel ""
         echo 0 > "$EN_NODE" 2>/dev/null
+        trigger_reload
         log 2 "process_hide: no process to hide"
         echo "PROCESS_HIDE=OK (empty list)"
         return 0
     fi
 
-    # 写入列表 + 启用
+    # 写入列表 + 启用 + 触发 reload
     if write_to_kernel "$procs"; then
         echo 1 > "$EN_NODE" 2>/dev/null
+        trigger_reload
         log 2 "process_hide applied: $procs"
         echo "PROCESS_HIDE=OK"
         echo "  hidden: $procs"
@@ -92,8 +99,6 @@ do_apply() {
 
 # ---------- list：列出当前所有进程（供 WebUI 筛选） ----------
 do_list() {
-    # 输出格式：PID|UID|COMM
-    # 优先用 ps -A，兜底 /proc 遍历
     if command -v ps >/dev/null 2>&1; then
         ps -A -o PID,UID,NAME 2>/dev/null | tail -n +2 | \
         while read -r pid uid name; do
