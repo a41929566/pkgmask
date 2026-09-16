@@ -618,6 +618,12 @@ jobs:
           printf '\n/* ReSukiSU: static export for KALLSYMS_ALL=n */\nEXPORT_SYMBOL_GPL(sel_handle_status_ops);\n' >> "$FILE"
           echo "[OK] 已追加 sel_handle_status_ops 导出"
           grep -n 'sel_handle_status_ops' "$FILE" | head -5
+          # 硬校验
+          grep -q '^const struct file_operations sel_handle_status_ops' "$FILE" \
+            || { echo "FATAL: static 未移除"; exit 1; }
+          grep -q '^EXPORT_SYMBOL_GPL(sel_handle_status_ops)' "$FILE" \
+            || { echo "FATAL: 未导出"; exit 1; }
+          echo "[OK] sel_handle_status_ops 导出校验通过"
       - name: 🔧 Set gki_defconfig (设置编译配置) 
         run: |
           cd kernel_workspace
