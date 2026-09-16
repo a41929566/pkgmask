@@ -20,54 +20,67 @@ gprop() { getprop "$1" 2>/dev/null; }
 catf() { cat "$1" 2>/dev/null; }
 
 # ---------- JSON 转义 ----------
+# jq_s      : 通用转义（含删除换行符，适用于单行值）
+# jq_s_raw  : 保留换行符（用于 susfs.check 等需要按行拆分的字段）
 jq_s() { echo "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\r\n'; }
+jq_s_raw() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 
 # ---------- SUSFS 检测（供 WebUI「SUSFS修复」Tab 显示） ----------
-# 返回值会写入 status.json 的 susfs_check 字段
+# 返回值会写入 status.json 的 susfs.check 字段
 # 每项格式：名称|状态|当前值|期望值|原因
+# 注意：条目之间用字面量 \n 分隔（不转真换行），由 jq_s_raw 保留后交给前端解析
 detect_susfs() {
     local out=""
+
+    # --- 内核层是否已重定向 ---
+    local bc_kernel; bc_kernel=$(catf /proc/bootconfig | tr '\n' ' ')
+    local cl_kernel; cl_kernel=$(catf /proc/cmdline | tr '\n' ' ')
+
     # 1) bootconfig 伪装
-    local bc; bc=$(catf /proc/bootconfig | tr '\n' ' ')
     local bc_ok=0
-    case "$bc" in *verifiedbootstate=green*) bc_ok=$((bc_ok+1));; esac
-    case "$bc" in *vbmeta.device_state=locked*) bc_ok=$((bc_ok+1));; esac
+    case "$bc_kernel" in *verifiedbootstate=green*) bc_ok=$((bc_ok+1));; esac
+    case "$bc_kernel" in *vbmeta.device_state=locked*) bc_ok=$((bc_ok+1));; esac
     if [ "$bc_ok" -ge 2 ]; then
         out="${out}bootconfig伪装|ok|green/locked|green/locked|/proc/bootconfig 已重定向到伪装值\n"
     else
-        out="${out}bootconfig伪装|fail|${bc:-空}|green/locked|SUSFS cmdline_or_bootconfig 未生效，检查内核是否支持 CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG\n"
+        out="${out}bootconfig伪装|fail|${bc_kernel:-空}|green/locked|SUSFS cmdline_or_bootconfig 未生效，检查内核是否支持 CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG\n"
     fi
 
     # 2) cmdline 重定向
-    local cl; cl=$(catf /proc/cmdline | tr '\n' ' ')
-    case "$cl" in
-        *verifiedbootstate=green*) out="${out}cmdline重定向|ok|green|green|/proc/cmdline 对普通进程已重定向\n";;
-        *) out="${out}cmdline重定向|warn|${cl:0:80}|green|open_redirect 未生效或尚未写入伪装文件\n";;
+    case "$cl_kernel" in
+        *verifiedbootstate=green*)
+            out="${out}cmdline重定向|ok|green|green|/proc/cmdline 对普通进程已重定向\n";;
+        *)
+            out="${out}cmdline重定向|warn|${cl_kernel:0:80}|green|open_redirect 未生效或尚未写入伪装文件\n";;
     esac
 
-    # 3) prop 三连（安全版：只做兜底检查，不做修改）
+    # 3) prop 三连（加固版：判定依据 = 应用视角是否 green）
     local p1 p2 p3
     p1=$(gprop ro.boot.verifiedbootstate)
     p2=$(gprop ro.boot.vbmeta.device_state)
     p3=$(gprop ro.boot.flash.locked)
+    local cur_vals="${p1:-空}/${p2:-空}/${p3:-空}"
+
     if [ "$p1" = "green" ] && [ "$p2" = "locked" ] && [ "$p3" = "1" ]; then
-        out="${out}prop三连|ok|$p1/$p2/$p3|green/locked/1|内核重定向已覆盖属性读取\n"
+        out="${out}prop三连|ok|$cur_vals|green/locked/1|属性层已直接伪装（非本模块所为，正常）\n"
+    elif [ "$bc_ok" -ge 2 ] || [ "$(case "$cl_kernel" in *verifiedbootstate=green*) echo 1;; *) echo 0;; esac)" = "1" ]; then
+        out="${out}prop三连|ok|属性层=$cur_vals + 内核重定向 green|green/locked/1|应用读取走内核重定向，属性层保持真值（一加校验必须），属正常工作状态\n"
     else
-        out="${out}prop三连|warn|${p1:-空}/${p2:-空}/${p3:-空}|green/locked/1|属性层未伪装（正常：引导状态由内核重定向伪装，属性层不改）\n"
+        out="${out}prop三连|warn|属性层=$cur_vals 内核未重定向|green/locked/1|请点「一键修复」触发 SUSFS 内核重定向\n"
     fi
 
     # 4) AVC 日志伪装
     if grep -q '"avc_log_spoofing": true' "$SUSFS_JSON" 2>/dev/null; then
         out="${out}AVC日志伪装|ok|已启用|已启用|免疫 AVC 日志审计类检测\n"
     else
-        out="${out}AVC日志伪装|warn|未启用|已启用|内核可能不支持 avc_log_spoofing\n"
+        out="${out}AVC日志伪装|warn|未启用|已启用|内核可能不支持 avc_log_spoofing（不影响核心功能）\n"
     fi
 
     # 5) 非root进程挂载隐藏
     if grep -q '"hide_sus_mnts_for_non_su_procs": true' "$SUSFS_JSON" 2>/dev/null; then
         out="${out}挂载隐藏|ok|已启用|已启用|非root进程看不到 sus 挂载\n"
     else
-        out="${out}挂载隐藏|warn|未启用|已启用|内核可能不支持 hide_sus_mnts\n"
+        out="${out}挂载隐藏|warn|未启用|已启用|内核可能不支持 hide_sus_mnts（不影响核心功能）\n"
     fi
 
     # 6) ksu_susfs 工具存在性
@@ -82,7 +95,7 @@ detect_susfs() {
         out="${out}ksu_susfs工具|fail|未找到|存在|内核未编译 SUSFS 或非 KSU 系\n"
     fi
 
-    printf '%b' "$out"
+    printf '%s' "$out"
 }
 
 # ---------- 进程列表（供 WebUI「进程隐藏」Tab 搜索） ----------
@@ -91,7 +104,6 @@ list_procs() {
     local first=1
     echo -n "["
     if command -v ps >/dev/null 2>&1; then
-        # 兼容 busybox/toybox 两种输出
         ps -A -o PID,UID,NAME 2>/dev/null | tail -n +2 | \
         while read -r pid uid name; do
             case "$pid" in ''|*[!0-9]*) continue ;; esac
@@ -101,7 +113,6 @@ list_procs() {
                 "$pid" "$uid" "$(jq_s "$name")"
         done
     else
-        # /proc 遍历兜底
         for d in /proc/[0-9]*; do
             [ -d "$d" ] || continue
             local pid=${d#/proc/}
@@ -113,36 +124,6 @@ list_procs() {
                 "$pid" "$uid" "$(jq_s "$comm")"
         done
     fi
-    echo -n "]"
-}
-
-# ---------- 应用隐藏验证：以 A 的 UID 尝试读 B 的数据目录 ----------
-# 参数：$1 = A 包名，$2 = B 包名（逗号分隔）
-# 返回：JSON 数组 {b_pkg, a_pkg, hidden, detail}
-verify_hide() {
-    local a_pkg="$1" b_list="$2"
-    local a_uid; a_uid=$(pkg_uid "$a_pkg")
-    local first=1
-    echo -n "["
-    for b in $(echo "$b_list" | tr ',' ' '); do
-        [ -z "$b" ] && continue
-        local detail hidden=0
-        if [ -z "$a_uid" ]; then
-            detail="A 未安装或取不到 UID"
-        else
-            # 尝试以 A 身份读 B 的目录
-            # su <uid> -c 在 KernelSU 下是允许的（如果 manager 开了 su_for_all）
-            detail=$(su "$a_uid" -c "ls -d /data/data/$b 2>&1" 2>&1 | head -1)
-            case "$detail" in
-                *"No such file"*|*"Permission denied"*|*"not found"*)
-                    hidden=1;;
-                *) hidden=0;;
-            esac
-        fi
-        [ "$first" = 1 ] && first=0 || echo -n ","
-        printf '{"a":"%s","b":"%s","hidden":"%s","detail":"%s"}' \
-            "$(jq_s "$a_pkg")" "$(jq_s "$b")" "$hidden" "$(jq_s "$detail")"
-    done
     echo -n "]"
 }
 
@@ -214,15 +195,14 @@ write_status() {
     local tgts hides; tgts=$(get_config pkgmask_targets ""); hides=$(get_config pkgmask_hide_pkgs "")
     local identity_state; identity_state=$(catf "$DATA_DIR/identity_state")
 
-    # SUSFS 检测项（每次刷新都跑，较快）
+    # SUSFS 检测项
     local susfs_check; susfs_check=$(detect_susfs)
 
-    # 应用隐藏验证结果（只在 WebUI 请求时计算，避免每次刷爆 CPU）
-    # 结果缓存在 $RUN_DIR/verify_cache.json
+    # 应用隐藏验证结果
     local verify; verify=$(catf "$RUN_DIR/verify_cache.json")
     [ -z "$verify" ] && verify="[]"
 
-    # 进程列表（只在需要时刷新；结果缓存在 $RUN_DIR/procs_cache.json）
+    # 进程列表
     local procs; procs=$(catf "$RUN_DIR/procs_cache.json")
     [ -z "$procs" ] && procs="[]"
 
@@ -236,7 +216,7 @@ write_status() {
       echo "  \"props\": {\"serial\":\"$(jq_s "$serial")\",\"fake_serial\":\"$(jq_s "$fake_serial")\",\"incremental\":\"$(jq_s "$inc")\",\"fake_inc\":\"$(jq_s "$fake_inc")\",\"fingerprint\":\"$(jq_s "$fp")\",\"vbstate\":\"$vb\",\"debuggable\":\"$dbg\",\"tags\":\"$tags\",\"oem\":\"$oem\",\"model\":\"$(jq_s "$model")\"},"
       echo "  \"hwid\": {\"supported\":\"$hwsup\",\"enabled\":\"$hwen\",\"hook_active\":\"$hwactive\",\"uids\":\"$(jq_s "$hwid_uids")\",\"cur_aid\":\"$(jq_s "$aidcur")\",\"fake_aid\":\"$(jq_s "$fake_aid")\",\"soc\":\"$(jq_s "$hsoc")\",\"fake_soc\":\"$(jq_s "$fake_soc")\",\"cid\":\"$(jq_s "$hwcid")\",\"fake_cid\":\"$(jq_s "$fake_cid")\",\"cpu\":\"$(jq_s "$hcpu")\",\"fake_cpu\":\"$(jq_s "$fake_cpu")\",\"wmac\":\"$(jq_s "$hwmac")\",\"fake_wmac\":\"$(jq_s "$fake_wmac")\",\"bmac\":\"$(jq_s "$hbmac")\",\"fake_bmac\":\"$(jq_s "$fake_bmac")\"},"
       echo "  \"pkgmask\": {\"supported\":\"$pmsup\",\"scope\":\"$(jq_s "$pmscope")\",\"deny_uids\":\"$(jq_s "$pmdeny")\",\"target_paths\":\"$(jq_s "$pmpaths")\",\"hide_proc\":\"$pmhproc\",\"hide_proc_names\":\"$(jq_s "$pmhname")\",\"status\":\"$(jq_s "$pmstat")\",\"targets\":\"$(jq_s "$tgts")\",\"hide_pkgs\":\"$(jq_s "$hides")\"},"
-      echo "  \"susfs\": {\"version\":\"$(jq_s "$susver")\",\"state\":\"$susstate\",\"check\":\"$(jq_s "$susfs_check")\"},"
+      echo "  \"susfs\": {\"version\":\"$(jq_s "$susver")\",\"state\":\"$susstate\",\"check\":\"$(jq_s_raw "$susfs_check")\"},"
       echo "  \"kernel\": {\"version\":\"$(jq_s "$kver")\",\"arch\":\"$karch\"},"
       echo "  \"selfcheck\": {\"pass\":\"${scp:-0}\",\"warn\":\"${scw:-0}\",\"fail\":\"${scf:-0}\"},"
       echo "  \"verify\": $verify,"
@@ -259,7 +239,6 @@ handle_action() {
         hwid_on) set_config spoof_hwid_enabled 1; sh "$MODDIR/tools/randomize.sh" apply ;;
         hwid_off) set_config spoof_hwid_enabled 0; sh "$MODDIR/tools/randomize.sh" apply ;;
         id_apps_set:*)
-            # 参数：逗号分隔的包名列表 -> 转 UID 写入 hwid_uids
             local pkgs="${a#id_apps_set:}" uids="" p u
             for p in $(echo "$pkgs" | tr ',' ' '); do
                 [ -z "$p" ] && continue
@@ -277,6 +256,9 @@ handle_action() {
                  for p in /data/adb/ksu/bin/ksu_susfs /data/adb/ksud/bin/ksu_susfs; do
                      [ -x "$p" ] && { echo "$p"; break; }
                  done)
+            # 载入配置和默认值，避免 SPOOF_CMDLINE 为空
+            . "$CONF" 2>/dev/null
+            : "${SPOOF_CMDLINE:=androidboot.verifiedbootstate=green androidboot.vbmeta.device_state=locked androidboot.selinux=enforcing}"
             if [ -n "$KS" ]; then
                 local spoof_txt="$MODDIR/config/cmdline_spoof.txt"
                 local fake_txt="$MODDIR/config/cmdline_fake.txt"
@@ -304,20 +286,17 @@ handle_action() {
             set_config pkgmask_targets "$list"
             sh "$MODDIR/tools/pkgmask_setup.sh" apply
             sh "$MODDIR/tools/appops_setup.sh" apply
-            # 触发验证
             sh "$MODDIR/tools/run_verify.sh" "$list" >/dev/null 2>&1
             ;;
         hidepkgs_set:*)
             local list="${a#hidepkgs_set:}"
             set_config pkgmask_hide_pkgs "$list"
             sh "$MODDIR/tools/pkgmask_setup.sh" apply
-            # 触发验证
             local tgts; tgts=$(get_config pkgmask_targets "")
             sh "$MODDIR/tools/run_verify.sh" "$tgts" >/dev/null 2>&1
             ;;
         # ---- 进程隐藏 ----
         prochide_list)
-            # 生成进程列表缓存
             list_procs > "$RUN_DIR/procs_cache.json" 2>/dev/null
             log 2 "prochide_list refreshed"
             ;;
