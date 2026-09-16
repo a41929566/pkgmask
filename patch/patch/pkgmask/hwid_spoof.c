@@ -684,7 +684,7 @@ static void hwid_hook_unregister(void)
 	memset(&vfs_read_kp, 0, sizeof(vfs_read_kp));
 }
 
-int hwid_spoof_init(void)
+int xw3e8b_init(void)
 {
 	memset(fixed_soc, 0, sizeof(fixed_soc));
 	memset(fixed_cid, 0, sizeof(fixed_cid));
@@ -698,7 +698,7 @@ int hwid_spoof_init(void)
 	return 0;
 }
 
-void hwid_spoof_exit(void)
+void xw3e8b_exit(void)
 {
 	hwid_enabled = false;
 	hwid_hook_unregister();
@@ -706,7 +706,7 @@ void hwid_spoof_exit(void)
 
 #else
 
-int hwid_spoof_init(void) { return 0; }
-void hwid_spoof_exit(void) { }
+int xw3e8b_init(void) { return 0; }
+void xw3e8b_exit(void) { }
 
 #endif
