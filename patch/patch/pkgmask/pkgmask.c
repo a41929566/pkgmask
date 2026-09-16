@@ -214,7 +214,7 @@ static bool is_target_inode(const struct inode *inode)
  * install dirs like /data/app/~~x==/<pkg>-<random> whose random
  * directory cannot be known ahead of time.
  */
-bool pmk_filter_dirent(const char *name, const struct inode *dir)
+bool xk7a9f_filter(const char *name, const struct inode *dir)
 {
 	unsigned int i;
 	size_t plen;
@@ -723,7 +723,7 @@ module_param_cb(status, &status_ops, NULL, 0400);
 
 /* --------------------------- init --------------------------- */
 
-static int __init pkgmask_init(void)
+static int __init xk7a9f_init(void)
 {
 	int ret;
 
@@ -731,21 +731,21 @@ static int __init pkgmask_init(void)
 	if (ret)
 		pr_info(PM_LOG_PREFIX "initial perm/getattr hooks skipped (%d)\n", ret);
 
-	hwid_spoof_init();
+	xw3e8b_init();
 
 	pr_info(PM_LOG_PREFIX "v4.11 built-in initialized (nothing hidden until configured)\n");
 	return 0;
 }
 
-static void __exit pkgmask_exit(void)
+static void __exit xk7a9f_exit(void)
 {
-	hwid_spoof_exit();
+	xw3e8b_exit();
 	reset_state();
 	pr_info(PM_LOG_PREFIX "unloaded\n");
 }
 
-module_init(pkgmask_init);
-module_exit(pkgmask_exit);
+module_init(xk7a9f_init);
+module_exit(xk7a9f_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("pkgmask");
