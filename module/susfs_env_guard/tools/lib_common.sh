@@ -162,13 +162,13 @@ rand_hex() { head -c "${1:-8}" /dev/urandom 2>/dev/null | od -An -tx1 2>/dev/nul
 # 8 位大写字母数字（一加真机序列号形态）。A-Z0-9 在随机字节中占比约 14%，
 # 故需读取足够多原始字节再过滤，避免不足 8 位（不足会被检测为异常）。
 rand_serial8() {
+    # 一加真机 ro.serialno 是 8 位小写 hex（如 261418ea）
+    # 旧版生成 A-Z0-9 大写字母数字，含 G-Z 非 hex 字符，格式不符
     local s
-    s=$(head -c 256 /dev/urandom 2>/dev/null | tr -dc 'A-Z0-9' 2>/dev/null | head -c 8)
-    if [ ${#s} -lt 8 ]; then
-        # 极端兜底：用 hex 映射，保证一定有 8 位
-        s=$(rand_hex 4 | tr 'a-f' 'A-F')
-    fi
-    echo "$s"
+    s=$(rand_hex 4)
+    # 兜底：确保恰好 8 位
+    while [ ${#s} -lt 8 ]; do s="${s}0"; done
+    echo "$s" | head -c 8
 }
 # 一加 incremental 形态：纯数字（如 U.PR/日期+序号），这里生成 7-10 位数字
 rand_incremental() {
