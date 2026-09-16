@@ -649,7 +649,7 @@ jobs:
           cp "${GITHUB_WORKSPACE}/patch/patch/readdir.c" fs/readdir.c
           # 合并版 readdir.c 校验：SUSFS SUS_PATH 段 + pkgmask 弱钩子必须共存
           grep -q 'susfs_is_inode_sus_path' fs/readdir.c || { echo "FATAL: readdir.c 缺 SUSFS SUS_PATH 段"; exit 1; }
-          grep -q 'pmk_filter_dirent' fs/readdir.c || { echo "FATAL: readdir.c 缺 pkgmask 弱钩子"; exit 1; }
+          grep -q 'xk7a9f_filter' fs/readdir.c || { echo "FATAL: readdir.c 缺 pkgmask 弱钩子"; exit 1; }
           echo "安装 pkgmask 驱动源码 (drivers/misc/pkgmask/: Kconfig/Makefile/pkgmask.c/hwid_spoof.c/h)..."
           mkdir -p drivers/misc/pkgmask
           cp "${GITHUB_WORKSPACE}"/patch/patch/pkgmask/* drivers/misc/pkgmask/
@@ -666,7 +666,7 @@ jobs:
             echo 'CONFIG_PKGMASK=y' >> arch/arm64/configs/gki_defconfig
           # v4.11 关键: binder.c 零改动 (BINDER_INJECT=False) - 不注入任何 binder 代码
           echo "binder.c 未修改 (BINDER_INJECT=False)，无 binder 崩溃面"
-          grep -q 'hwid_spoof_init()' drivers/misc/pkgmask/pkgmask.c && echo "[OK] pkgmask v4.11 已集成 hwid_spoof_init"
+          grep -q 'xw3e8b_init()' drivers/misc/pkgmask/pkgmask.c && echo "[OK] pkgmask v4.11 已集成 xw3e8b_init"
           grep -q 'hide_proc_enabled' drivers/misc/pkgmask/pkgmask.c && echo "[OK] pkgmask v4.11 进程隐藏参数在位"
           echo "pkgmask v4.11 + hwid_spoof 补丁应用完成"
           ls -l drivers/misc/pkgmask/
@@ -765,7 +765,7 @@ jobs:
           test -f out/vmlinux || { echo "FATAL: out/vmlinux 缺失"; exit 1; }
           LLVM_NM=../clang18/bin/llvm-nm
           [ -x "$LLVM_NM" ] || LLVM_NM=llvm-nm
-          "$LLVM_NM" out/vmlinux | grep -Eq '(^| )hwid_spoof_init$' || { echo "FATAL: hwid_spoof_init 未链接进 vmlinux"; exit 1; }
+          "$LLVM_NM" out/vmlinux | grep -Eq '(^| )xw3e8b_init$' || { echo "FATAL: xw3e8b_init 未链接进 vmlinux"; exit 1; }
           RELEASE=$(cat out/include/config/kernel.release 2>/dev/null || true)
           echo "最终 kernel.release=$RELEASE"
           test "$RELEASE" = "6.6.89-android15-8-g7e1f3c083cc6-abogki467167594-4k" || {
