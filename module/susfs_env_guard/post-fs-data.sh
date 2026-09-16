@@ -6,8 +6,8 @@
 #   1) 此阶段只做文件准备，不碰任何 ro.* 属性
 #   2) 引导状态伪装由 SUSFS 的 cmdline_or_bootconfig 在内核层完成
 #   3) 属性三连延后到 service.sh（开机 10 秒后）
-#   4) 历史教训：在 zygote 前修改 ro.boot.verifiedbootstate 会导致一加
-#      设备 Bootloader 完整性校验失败，无限重启（卡黄字）
+#   4) cmdline/bootconfig 伪装文件由 susfs_fix.sh 在 service 阶段生成
+#      此阶段只清理过期文件，避免 zygote 前操作内核
 
 . "${0%/*}/tools/lib_common.sh"
 
@@ -16,21 +16,9 @@ if [ -f "$MODDIR/sepolicy.rule" ]; then
     "$MAGISKPOLICY" --apply "$MODDIR/sepolicy.rule" 2>/dev/null
 fi
 
-# 重建伪装文件（SUSFS 内核重定向的目标文件）
-SPOOF_TXT="$MODDIR/config/cmdline_spoof.txt"
-FAKE_TXT="$MODDIR/config/cmdline_fake.txt"
-. "$CONF" 2>/dev/null
-: "${SPOOF_CMDLINE:=androidboot.verifiedbootstate=green androidboot.vbmeta.device_state=locked androidboot.selinux=enforcing}"
-
-if [ ! -s "$SPOOF_TXT" ] || [ ! -s "$FAKE_TXT" ]; then
-    if [ -n "$SPOOF_CMDLINE" ]; then
-        printf '%s\n' $SPOOF_CMDLINE > "$SPOOF_TXT"
-        echo "$SPOOF_CMDLINE" > "$FAKE_TXT"
-        chmod 644 "$SPOOF_TXT" "$FAKE_TXT" 2>/dev/null
-    fi
-fi
+# 清理上一轮的伪装文件（避免残留格式错误的内容被误引用）
+# 真正的伪装文件在 service.sh → run.sh → susfs_fix.sh 里生成
+rm -f "$MODDIR/config/cmdline_spoof.txt" "$MODDIR/config/cmdline_fake.txt" 2>/dev/null
 
 # 所有属性伪装、硬件 ID、pkgmask、进程隐藏全部延后到 service.sh
-# 原因：zygote 启动前修改 ro.* 属性或挂 vfs_read kretprobe 都可能导致系统级重启
-
 exit 0
