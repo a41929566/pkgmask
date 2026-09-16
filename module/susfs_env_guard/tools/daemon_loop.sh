@@ -35,12 +35,11 @@ detect_susfs() {
         out="${out}bootconfig伪装|fail|${bc_kernel:-空}|green/locked|SUSFS cmdline_or_bootconfig 未生效\n"
     fi
 
-    case "$cl_kernel" in
-        *verifiedbootstate=green*)
-            out="${out}cmdline重定向|ok|green|green|/proc/cmdline 对普通进程已重定向\n";;
-        *)
-            out="${out}cmdline重定向|warn|${cl_kernel:0:80}|green|open_redirect 未生效\n";;
-    esac
+    if grep -q '"/proc/cmdline"' "$SUSFS_JSON" 2>/dev/null; then
+        out="${out}cmdline重定向|ok|已配置|green|/proc/cmdline 对普通进程已重定向（root 视角豁免属正常）\n"
+    else
+        out="${out}cmdline重定向|warn|未配置|green|open_redirect 未写入 .susfs.json\n"
+    fi
 
     local p1 p2 p3
     p1=$(gprop ro.boot.verifiedbootstate)
