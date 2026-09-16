@@ -1,10 +1,6 @@
 #!/system/bin/sh
 # SUSFS环境守护 v3.0 - 守护进程
-# 职责：
-#   1) 消费 action.txt 动作
-#   2) 聚合 status.json 供 WebUI 实时反馈
-#   3) 全程容错，单点失败绝不退出
-# 由 service.sh 以 setsid 后台启动，开机自启。
+# 职责：1) 消费 action.txt 动作 2) 聚合 status.json 3) 全程容错
 
 . "${0%/*}/lib_common.sh"
 
@@ -191,13 +187,25 @@ write_status() {
     local verify; verify=$(catf "$RUN_DIR/verify_cache.json"); [ -z "$verify" ] && verify="[]"
     local procs; procs=$(catf "$RUN_DIR/procs_cache.json"); [ -z "$procs" ] && procs="[]"
 
-    # 用户手动添加的路径（用 | 分隔）
     local user_paths
     user_paths=$(list_user_paths | tr '\n' '|' | sed 's/|$//')
 
-    # .susfs.json 里实际注册的路径（用于显示）
     local sus_paths_json
     sus_paths_json=$(catf "$SUSFS_JSON" | grep -o '"/[^"]*"' | tr '\n' '|' | sed 's/|$//')
+
+    # ---------- 新增：读取 selfcheck 逐项 ----------
+    local sc_items
+    sc_items=$(awk -F'\t' '
+        BEGIN{printf "["}
+        {
+            if(NR>1) printf ","
+            gsub(/\\/,"\\\\",$2)
+            gsub(/"/,"\\\"",$2)
+            printf "{\"st\":\"%s\",\"msg\":\"%s\"}",$1,$2
+        }
+        END{printf "]"}
+    ' "$RUN_DIR/selfcheck_items.tsv" 2>/dev/null)
+    [ -z "$sc_items" ] && sc_items="[]"
 
     local tmp="$STATUS_FILE.tmp"
     {
@@ -212,7 +220,7 @@ write_status() {
       echo "  \"susfs\": {\"version\":\"$(jq_s "$susver")\",\"state\":\"$susstate\",\"check\":\"$(jq_s_raw "$susfs_check")\"},"
       echo "  \"sus_path\": {\"user\":\"$(jq_s "$user_paths")\",\"registered\":\"$(jq_s "$sus_paths_json")\"},"
       echo "  \"kernel\": {\"version\":\"$(jq_s "$kver")\",\"arch\":\"$karch\"},"
-      echo "  \"selfcheck\": {\"pass\":\"${scp:-0}\",\"warn\":\"${scw:-0}\",\"fail\":\"${scf:-0}\"},"
+      echo "  \"selfcheck\": {\"pass\":\"${scp:-0}\",\"warn\":\"${scw:-0}\",\"fail\":\"${scf:-0}\",\"items\":$sc_items},"
       echo "  \"verify\": $verify,"
       echo "  \"procs\": $procs"
       echo "}"
@@ -244,9 +252,7 @@ handle_action() {
         susfs_fix)
             sh "$MODDIR/tools/susfs_fix.sh" apply
             ;;
-        susfs_check)
-            : # status.json 会刷新
-            ;;
+        susfs_check) : ;;
         pkgmask_apply) sh "$MODDIR/tools/pkgmask_setup.sh" apply ;;
         pkgmask_restore) sh "$MODDIR/tools/pkgmask_setup.sh" restore ;;
         appops_apply) sh "$MODDIR/tools/appops_setup.sh" apply ;;
@@ -290,7 +296,6 @@ handle_action() {
             echo "$new" > "$PKG/hide_proc_names" 2>/dev/null
             echo 1 > "$PKG/reload" 2>/dev/null
             ;;
-        # ---------- 新增：用户手动路径管理 ----------
         suspath_add:*)
             local path="${a#suspath_add:}"
             [ -z "$path" ] && return
@@ -299,7 +304,6 @@ handle_action() {
                 echo "$path" >> "$USER_PATHS_FILE"
                 log 2 "user path added: $path"
             fi
-            # 立即生效（不重跑整个 susfs_fix，避免清掉内核已有配置）
             local KS2
             KS2=$(command -v ksu_susfs 2>/dev/null || \
                   for p in /data/adb/ksu/bin/ksu_susfs /data/adb/ksud/bin/ksu_susfs; do
@@ -317,11 +321,8 @@ handle_action() {
                 mv -f "${USER_PATHS_FILE}.tmp" "$USER_PATHS_FILE" 2>/dev/null
                 log 2 "user path removed: $path"
             fi
-            # 不主动从内核 remove；下次 susfs_fix 重跑会重建列表
             ;;
-        suspath_list)
-            : # status.json 会刷新
-            ;;
+        suspath_list) : ;;
         selfcheck) sh "$MODDIR/tools/selfcheck.sh" > "$RUN_DIR/last_selfcheck.txt" 2>&1 ;;
         cleanup) sh "$MODDIR/tools/cleanup.sh" ;;
         *) log 1 "unknown action: $a" ;;
