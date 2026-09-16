@@ -12,7 +12,8 @@ USER_PATHS_FILE="$DATA_DIR/user_hidden_paths.txt"
 mkdir -p "$MODDIR/webroot"
 echo "$$" > "$PID_FILE"
 trap 'rm -f "$PID_FILE"' EXIT
-
+LAST_ACTION=""
+LAST_ACTION_TIME=0
 gprop() { getprop "$1" 2>/dev/null; }
 catf() { cat "$1" 2>/dev/null; }
 
@@ -211,6 +212,8 @@ write_status() {
       echo "{"
       echo "  \"ts\": $(date +%s),"
       echo "  \"global\": \"$G\","
+      echo "  \"last_action\": \"$(jq_s "$LAST_ACTION")\","
+      echo "  \"last_action_time\": ${LAST_ACTION_TIME:-0},"
       echo "  \"features\": {\"props\":\"$(get_config spoof_props_enabled 0)\",\"android_id\":\"$(get_config spoof_android_id 0)\",\"hwid\":\"$(get_config spoof_hwid_enabled 0)\",\"pkgmask\":\"$(get_config spoof_pkgmask_enabled 0)\",\"prochide\":\"$(get_config spoof_process_hide_enabled 0)\",\"suspath\":\"$(get_config SUSFS_PATH_HIDE 0)\"},"
       echo "  \"identity_transaction\": \"$(jq_s "$identity_state")\","
       echo "  \"props\": {\"serial\":\"$(jq_s "$serial")\",\"fake_serial\":\"$(jq_s "$fake_serial")\",\"incremental\":\"$(jq_s "$inc")\",\"fake_inc\":\"$(jq_s "$fake_inc")\",\"fingerprint\":\"$(jq_s "$fp")\",\"vbstate\":\"$vb\",\"debuggable\":\"$dbg\",\"tags\":\"$tags\",\"oem\":\"$oem\",\"model\":\"$(jq_s "$model")\"},"
@@ -230,6 +233,8 @@ write_status() {
 handle_action() {
     local a; a=$(cat "$ACTION_FILE" 2>/dev/null); rm -f "$ACTION_FILE"
     [ -z "$a" ] && return
+    LAST_ACTION="$a"
+    LAST_ACTION_TIME=$(date +%s)
     log 2 "action: $a"
     case "$a" in
         props_on) set_config spoof_props_enabled 1; sh "$MODDIR/tools/props_spoof.sh" apply ;;
