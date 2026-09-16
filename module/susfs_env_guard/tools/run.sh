@@ -27,6 +27,12 @@ while [ "$(getprop sys.boot_completed)" != "1" ] && [ $i -lt 60 ]; do
     sleep 2; i=$((i+1))
 done
 log_file "boot_completed after ~$((i*2))s"
+# ---------- 2. SUSFS 内核重定向（bootconfig/cmdline） ----------
+if [ -f "$MODDIR/tools/susfs_fix.sh" ]; then
+    log_file "--> susfs_fix.sh apply"
+    sh "$MODDIR/tools/susfs_fix.sh" apply >> "$RUN_LOG" 2>&1
+    log_file "<-- susfs_fix.sh rc=$?"
+fi
 
 # ---------- 2. 等待 settings / appops 服务就绪 ----------
 j=0
