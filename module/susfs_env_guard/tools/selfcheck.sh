@@ -111,13 +111,25 @@ if [ -f "$HWID_SYSFS/hwid_enabled" ]; then
             || no "hwid hook 未注册（kretprobe 不可用）"
         echo "$HS" | grep -q '^wlan_mac=..' && ps_ "hwid 已加载假 MAC" \
             || no "hwid 假值未就位"
-        . "$DATA_DIR/fake_profile.conf" 2>/dev/null
-        [ "$fake_cpu" = "$fake_soc" ] && ps_ "SoC == cpuinfo Serial（自洽）" \
-            || no "SoC != cpuinfo Serial（不自洽）"
-        _w_oui=$(echo "$fake_wmac" | cut -d: -f1-3)
-        _b_oui=$(echo "$fake_bmac" | cut -d: -f1-3)
-        [ "$_w_oui" = "$_b_oui" ] && ps_ "WiFi 和 BT 同 OUI（自洽）" \
-            || no "WiFi OUI != BT OUI（不自洽）"
+                if [ -f "$DATA_DIR/fake_profile.conf" ]; then
+            . "$DATA_DIR/fake_profile.conf" 2>/dev/null
+            if [ -n "$fake_cpu" ] && [ -n "$fake_soc" ]; then
+                [ "$fake_cpu" = "$fake_soc" ] && ps_ "SoC == cpuinfo Serial（自洽）" \
+                    || no "SoC != cpuinfo Serial（不自洽）"
+            else
+                no "fake_soc/fake_cpu 未生成（profile 缺失）"
+            fi
+            if [ -n "$fake_wmac" ] && [ -n "$fake_bmac" ]; then
+                _w_oui=$(echo "$fake_wmac" | cut -d: -f1-3)
+                _b_oui=$(echo "$fake_bmac" | cut -d: -f1-3)
+                [ "$_w_oui" = "$_b_oui" ] && ps_ "WiFi 和 BT 同 OUI（自洽）" \
+                    || no "WiFi OUI != BT OUI（不自洽）"
+            else
+                no "fake_wmac/fake_bmac 未生成（profile 缺失）"
+            fi
+        else
+            no "fake_profile.conf 不存在"
+        fi
     else
         wn "hwid_spoof 未使能（enabled=$HE）"
     fi
