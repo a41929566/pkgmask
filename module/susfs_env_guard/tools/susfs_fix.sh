@@ -86,7 +86,7 @@ hide_common_paths() {
     done
 }
 
-[ "$(get_config SUSFS_PATH_HIDE 0)" = "1" ] && hide_common_paths "$KS"
+[ "$(get_config SPOOF_PATH_HIDE 1)" = "1" ] && hide_common_paths "$KS"
 
 # ---------- 5) 可选：AVC 日志伪装 + 隐藏 SUS 挂载 ----------
 [ "$(get_config SPOOF_AVC_LOG 0)" = "1" ] && {
