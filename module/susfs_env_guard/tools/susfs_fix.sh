@@ -2,10 +2,13 @@
 # SUSFS Env Guard v3.0 - susfs_fix.sh
 # 独立 SUSFS 修复脚本，由 run.sh 和 daemon_loop.sh 共同调用
 #
-# 核心思路：
-#   cmdline：读当前真值 → sed 替换敏感字段 → 写伪装文件
-#   bootconfig：用固定模板 config/bootconfig_spoof.txt
-#   sus_path：内置通用路径 + 配置文件追加 + 用户手动追加（user_hidden_paths.txt）
+# 【v3.1 关键修复】
+#   - hide_common_paths：POSIX shell 管道陷阱
+#     旧版：collect_paths | while read p; do "$ks" ... done
+#     管道右侧是子 shell，$ks 局部变量丢失，命令变成 "" 静默失败
+#     新版：collect_paths > tmplist; while ... < tmplist
+#   - 变量名统一：SUSFS_PATH_HIDE → SPOOF_PATH_HIDE
+#   - 变量名统一：SUSFS_PATH_HIDE_EXTRA → PATH_HIDE_EXTRA
 
 . "${0%/*}/lib_common.sh"
 
@@ -45,21 +48,31 @@ cp "$F" "$D/cmdline_spoof.txt"
 
 # ---------- 4) SUSFS 路径循环隐藏 ----------
 # 收集三类路径：内置通用 + 配置文件额外 + 用户手动追加
+# 【关键】只输出到 stdout，由调用者重定向到文件
 collect_paths() {
-    # 内置通用路径
-    cat << 'BUILTIN'
-/data/adb
-/data/adb/ksu
-/data/adb/ksu/bin
-/data/adb/ksud
-/data/adb/modules
-/data/adb/zygisk
-/system/bin/su
-/system/xbin/su
-/sbin/su
-/vendor/bin/su
-/dev/socket/ksud
-BUILTIN
+    local p
+
+    # 内置通用路径（存在才输出）
+    for p in \
+        /data/adb \
+        /data/adb/ksu \
+        /data/adb/ksu/bin \
+        /data/adb/ksud \
+        /data/adb/modules \
+        /data/adb/zygisk \
+        /data/adb/modules/rezygisk \
+        /data/adb/modules/zygisk-assistant \
+        /data/adb/modules/teesimulator \
+        /data/adb/modules/teesimulator-rs \
+        /data/adb/modules/playintegrityfix \
+        /data/adb/modules/kpatch-next \
+        /system/bin/su \
+        /system/xbin/su \
+        /sbin/su \
+        /vendor/bin/su \
+        /dev/socket/ksud; do
+        [ -e "$p" ] && echo "$p"
+    done
 
     # 配置文件里的额外路径（空格分隔）
     local extra
@@ -70,20 +83,31 @@ BUILTIN
 
     # 用户手动添加的路径（每行一个，支持 # 注释）
     if [ -f "$USER_PATHS_FILE" ]; then
-        grep -v '^[[:space:]]*#' "$USER_PATHS_FILE" 2>/dev/null | grep -v '^[[:space:]]*$'
+        grep -v '^[[:space:]]*#' "$USER_PATHS_FILE" 2>/dev/null \
+            | grep -v '^[[:space:]]*$'
     fi
 }
 
+# 隐藏路径：避免管道子 shell 陷阱
 hide_common_paths() {
     local ks="$1"
+    local tmplist="$RUN_DIR/.sus_paths.tmp"
     local p
-    collect_paths | while IFS= read -r p; do
+
+    collect_paths > "$tmplist" 2>/dev/null
+
+    while IFS= read -r p; do
+        [ -z "$p" ] && continue
+        # 去尾部斜杠（SUSFS 按字符串匹配，/data/adb 和 /data/adb/ 是两条）
+        p="${p%/}"
         [ -z "$p" ] && continue
         [ -e "$p" ] || continue
-        # 幂等：add 重复路径 SUSFS 会自动去重；失败不阻断
+        # 幂等 add；失败不阻断
         "$ks" config sus_path add "$p" --loop 2>/dev/null || \
             "$ks" add_sus_path_loop "$p" 2>/dev/null || true
-    done
+    done < "$tmplist"
+
+    rm -f "$tmplist"
 }
 
 [ "$(get_config SPOOF_PATH_HIDE 1)" = "1" ] && hide_common_paths "$KS"
@@ -97,6 +121,21 @@ hide_common_paths() {
     "$KS" config hide_sus_mnts_for_non_su_procs add 2>/dev/null
     "$KS" hide_sus_mnts_for_non_su_procs 1 2>/dev/null
 }
+
+# ---------- 6) 可选：隐藏 Zygisk 注入库（/proc/self/maps）----------
+hide_zygisk_maps() {
+    local ks="$1"
+    local so
+    for so in \
+        /data/adb/modules/rezygisk/zygisk/arm64-v8a/libzygisk.so \
+        /data/adb/modules/zygisksu/zygisk/arm64-v8a/libzygisk.so \
+        /data/adb/modules/zygisk-assistant/zygisk/arm64-v8a/*.so \
+        /data/adb/modules/*/zygisk/arm64-v8a/*.so; do
+        [ -f "$so" ] || continue
+        "$ks" add_sus_map "$so" 2>/dev/null
+    done
+}
+[ "$(get_config SUSFS_HIDE_ZYGISK_MAP 1)" = "1" ] && hide_zygisk_maps "$KS"
 
 log 2 "susfs_fix: applied cmdline+$B"
 echo "SUSFS_FIX=OK"
