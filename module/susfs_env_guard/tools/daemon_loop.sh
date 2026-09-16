@@ -12,6 +12,29 @@ USER_PATHS_FILE="$DATA_DIR/user_hidden_paths.txt"
 mkdir -p "$MODDIR/webroot"
 echo "$$" > "$PID_FILE"
 trap 'rm -f "$PID_FILE"' EXIT
+# ---------- 伪装进程名 + 自我隐藏 ----------
+# 把 comm 改成看起来像内核线程的名字，避免 ps -A | grep daemon 发现
+# 注意：comm 最长 15 字符；kcompactd99 不存在于标准内核
+echo "kcompactd99" > /proc/self/comm 2>/dev/null
+
+# 把自己加进 pkgmask 的 hide_proc_names，并从 /proc 里隐藏
+self_hide_proc() {
+    local hpn="/sys/module/pkgmask/parameters/hide_proc_names"
+    local hpe="/sys/module/pkgmask/parameters/hide_proc_enabled"
+    local hrl="/sys/module/pkgmask/parameters/reload"
+    [ -w "$hpn" ] || return 0
+    local cur
+    cur=$(cat "$hpn" 2>/dev/null)
+    case ",$cur," in
+        *",kcompactd99,"*) ;;
+        *)
+            echo "${cur:+$cur,}kcompactd99" > "$hpn" 2>/dev/null
+            echo 1 > "$hpe" 2>/dev/null
+            echo 1 > "$hrl" 2>/dev/null
+            ;;
+    esac
+}
+self_hide_proc
 LAST_ACTION=""
 LAST_ACTION_TIME=0
 gprop() { getprop "$1" 2>/dev/null; }
