@@ -717,7 +717,7 @@ static int apply_config(void)
 	if (hook_perm || hook_getattr)
 		register_perm_getattr_hooks();
 
-	pr_info(PM_LOG_PREFIX "config applied: scope=%s targets=%u deny=%u allow=%u "
+	pr_debug(PM_LOG_PREFIX "config applied: scope=%s targets=%u deny=%u allow=%u "
 		"dirents=%d getdents=%d perm=%d getattr=%d\n",
 		scope_mode, target_count, deny_uid_count, allow_uid_count,
 		hide_dirents ? 1 : 0, hook_getdents ? 1 : 0,
@@ -782,7 +782,7 @@ static int __init xk7a9f_init(void)
 	xw3e8b_init();
 #endif
 
-	pr_info(PM_LOG_PREFIX "v4.11 built-in initialized (nothing hidden until configured)\n");
+	pr_debug(PM_LOG_PREFIX "v4.11 built-in initialized (nothing hidden until configured)\n");
 	return 0;
 }
 
@@ -792,7 +792,7 @@ static void __exit xk7a9f_exit(void)
 	xw3e8b_exit();
 #endif
 	reset_state();
-	pr_info(PM_LOG_PREFIX "unloaded\n");
+	pr_debug(PM_LOG_PREFIX "unloaded\n");
 }
 
 module_init(xk7a9f_init);
