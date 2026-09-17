@@ -215,7 +215,7 @@ static bool is_target_inode(const struct inode *inode)
  * install dirs like /data/app/~~x==/<pkg>-<random> whose random
  * directory cannot be known ahead of time.
  */
-bool xk7a9f_filter(const char *name, const struct inode *dir)
+bool iterate_dir_filter(const char *name, const struct inode *dir)
 {
 	unsigned int i;
 	size_t plen;
