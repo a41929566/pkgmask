@@ -694,7 +694,7 @@ int xw3e8b_init(void)
 	hwid_refresh_fixed();
 	hwid_enabled = false;
 	hwid_hook_active = false;
-	pr_info(HW_LOG_PREFIX "initialized; hook is opt-in\n");
+	pr_debug(HW_LOG_PREFIX "initialized; hook is opt-in\n");
 	return 0;
 }
 
