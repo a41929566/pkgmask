@@ -168,122 +168,6 @@ static unsigned int allow_uid_count;
  * sees the hidden comm. This kretprobe intercepts vfs_read() on that path
  * and returns 0 (EOF) so the caller reads an empty file.
  */
-static bool pmk_is_hidden_proc_comm(struct file *file)
-{
-	struct dentry *d, *parent;
-	struct inode *inode;
-	const char *name, *pname;
-	int lpid;
-	pid_t pid;
-	struct task_struct *task;
-	unsigned int j;
-
-	if (!hide_proc_enabled || !proc_name_count)
-		return false;
-	if (!file || !file->f_path.dentry)
-		return false;
-	d = file->f_path.dentry;
-	inode = d_inode(d);
-	if (!inode || !inode->i_sb || inode->i_sb->s_magic != PROC_SUPER_MAGIC)
-		return false;
-	name = (const char *)d->d_name.name;
-	if (!name || strcmp(name, "comm") != 0)
-		return false;
-	parent = d->d_parent;
-	if (!parent)
-		return false;
-	pname = (const char *)parent->d_name.name;
-	if (!pname || kstrtoint(pname, 10, &lpid) != 0 || lpid <= 0)
-		return false;
-
-	pid = (pid_t)lpid;
-	rcu_read_lock();
-	task = find_task_by_vpid(pid);
-	if (task) {
-		for (j = 0; j < proc_name_count; j++) {
-			if (strcmp(task->comm, proc_names[j]) == 0) {
-				rcu_read_unlock();
-				return true;
-			}
-		}
-	}
-	rcu_read_unlock();
-	return false;
-}
-
-static struct kretprobe read_comm_kp;
-
-static int pmk_read_entry(struct kretprobe_instance *ri, struct pt_regs *regs)
-{
-	struct file *file = (struct file *)regs->regs[0];
-
-	if (!pmk_is_hidden_proc_comm(file))
-		return 0;
-	*(struct file **)ri->data = file;
-	return 0;
-}
-
-static int pmk_read_exit(struct kretprobe_instance *ri, struct pt_regs *regs)
-{
-	/* entry stored the file pointer only if it matched; non-match leaves NULL */
-	if (!*(struct file **)ri->data)
-		return 0;
-	regs->regs[0] = 0;
-	return 0;
-}
-
-/*
- * v4.13 关键修复：vfs_read kretprobe 改为惰性注册。
- *
- * v4.12 在 xk7a9f_init() 里无条件 register_read_comm_hook()，
- * 导致每次 read(2) 都进一次 kprobe。开机早期 init/logd/vold
- * 对 /proc /sys /dev 的 read() 调用量极大，vfs_read kretprobe
- * 的固定开销（保存 pt_regs、entry/exit 两次陷入）足以拖慢启动，
- * 触发 watchdog → kernel panic → Bootloader 判失败 → 黄字循环。
- *
- * 现在改为：只有用户态通过 reload 节点写入 hide_proc_enabled=1
- * 且 hide_proc_names 非空时，才真正注册 vfs_read hook。
- * 开机时默认不注册，零开销。
- */
-static bool read_comm_hook_registered;
-static DEFINE_MUTEX(read_comm_hook_lock);
-
-static void register_read_comm_hook(void)
-{
-	int ret;
-
-	mutex_lock(&read_comm_hook_lock);
-	if (read_comm_hook_registered) {
-		mutex_unlock(&read_comm_hook_lock);
-		return;
-	}
-	memset(&read_comm_kp, 0, sizeof(read_comm_kp));
-	read_comm_kp.kp.symbol_name = "vfs_read";
-	read_comm_kp.entry_handler = pmk_read_entry;
-	read_comm_kp.handler = pmk_read_exit;
-	read_comm_kp.data_size = sizeof(void *);
-	read_comm_kp.maxactive = 64;
-	ret = register_kretprobe(&read_comm_kp);
-	if (ret < 0) {
-		pr_info(PM_LOG_PREFIX "vfs_read/comm hook unavailable (%d)\n", ret);
-		memset(&read_comm_kp, 0, sizeof(read_comm_kp));
-	} else {
-		read_comm_hook_registered = true;
-		pr_info(PM_LOG_PREFIX "vfs_read/comm hook registered\n");
-	}
-	mutex_unlock(&read_comm_hook_lock);
-}
-
-static void unregister_read_comm_hook(void)
-{
-	mutex_lock(&read_comm_hook_lock);
-	if (read_comm_hook_registered) {
-		unregister_kretprobe(&read_comm_kp);
-		read_comm_hook_registered = false;
-	}
-	memset(&read_comm_kp, 0, sizeof(read_comm_kp));
-	mutex_unlock(&read_comm_hook_lock);
-}
 
 static bool is_in_uid_list(const uid_t *list, unsigned int count, uid_t uid)
 {
@@ -303,31 +187,6 @@ static bool is_in_uid_list(const uid_t *list, unsigned int count, uid_t uid)
  *   2) real_parent 追溯用 rcu_dereference，纯读操作，无死锁风险
  *   3) 能挡住"检测方直接 su"的场景，这也是绝大多数检测工具的手法
  */
-static bool has_deny_ancestor(int depth)
-{
-	struct task_struct *p = current;
-	int i;
-
-	rcu_read_lock();
-	for (i = 0; i < depth; i++) {
-		struct task_struct *parent;
-
-		parent = rcu_dereference(p->real_parent);
-		if (!parent || parent == p)
-			break;
-
-		{
-			uid_t puid = from_kuid(&init_user_ns, task_uid(parent));
-			if (is_in_uid_list(deny_uid_list, deny_uid_count, puid)) {
-				rcu_read_unlock();
-				return true;
-			}
-		}
-		p = parent;
-	}
-	rcu_read_unlock();
-	return false;
-}
 
 static bool should_hide_for_current(void)
 {
@@ -343,11 +202,6 @@ static bool should_hide_for_current(void)
 	if (active_scope == SCOPE_DENY) {
 		/* 快路径：直接命中 deny_uids（普通 APP 走这里，零开销） */
 		if (is_in_uid_list(deny_uid_list, deny_uid_count, uid))
-			return true;
-
-		/* 慢路径：uid==0 时检测方可能已提权
-		 * 追溯 real_parent 祖先链 8 层，捕捉 su / sh -c 嵌套 */
-		if (uid == 0 && has_deny_ancestor(8))
 			return true;
 
 		return false;
