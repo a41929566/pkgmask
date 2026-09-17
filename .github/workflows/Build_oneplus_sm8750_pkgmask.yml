@@ -600,30 +600,59 @@ jobs:
           echo "[OK] SUSFS stealth applied via sed"
           grep -q "ksdcardd" fs/susfs.c && echo "[OK] Verified: susfs_sdcard_monitor renamed to ksdcardd" || echo "[WARN] Rename verification failed"
           echo "[OK] SUSFS 补丁处理流程全部完成"
-      - name: 🔧 Export sel_handle_status_ops for ReSukiSU (KALLSYMS_ALL=n)
+      - name: 🔧 Export ReSukiSU required symbols (KALLSYMS_ALL=n)
         run: |
           cd kernel_workspace/common
-          FILE="security/selinux/selinuxfs.c"
-          if [ ! -f "$FILE" ]; then
-            echo "::error::未找到 $FILE"
-            exit 1
-          fi
-          if grep -q 'EXPORT_SYMBOL.*sel_handle_status_ops' "$FILE"; then
-            echo "[OK] sel_handle_status_ops 已导出，跳过"
-            exit 0
-          fi
-          # 去掉可能的 static 修饰
-          sed -i 's/^static \(const struct file_operations sel_handle_status_ops\)/\1/' "$FILE"
-          # 文件末尾追加导出
-          printf '\n/* ReSukiSU: static export for KALLSYMS_ALL=n */\nEXPORT_SYMBOL_GPL(sel_handle_status_ops);\n' >> "$FILE"
-          echo "[OK] 已追加 sel_handle_status_ops 导出"
-          grep -n 'sel_handle_status_ops' "$FILE" | head -5
-          # 硬校验
-          grep -q '^const struct file_operations sel_handle_status_ops' "$FILE" \
-            || { echo "FATAL: static 未移除"; exit 1; }
-          grep -q '^EXPORT_SYMBOL_GPL(sel_handle_status_ops)' "$FILE" \
-            || { echo "FATAL: 未导出"; exit 1; }
-          echo "[OK] sel_handle_status_ops 导出校验通过"
+
+          # export_one <file> <symbol>
+          # 功能：
+          #   1) 去掉符号定义行的 static 修饰（兼容任意返回类型）
+          #   2) 文件末尾追加 EXPORT_SYMBOL_GPL(<symbol>)
+          #   3) 硬校验，失败立即退出
+          export_one() {
+            local FILE="$1"
+            local SYM="$2"
+
+            echo ""
+            echo "==== 处理符号: $SYM （文件: $FILE） ===="
+
+            if [ ! -f "$FILE" ]; then
+              echo "::error::未找到 $FILE"
+              exit 1
+            fi
+
+            # 已导出过则跳过（幂等）
+            if grep -q "^EXPORT_SYMBOL_GPL($SYM)" "$FILE"; then
+              echo "[OK] $SYM 已导出，跳过"
+              return 0
+            fi
+
+            # 去掉行首 static，兼容返回类型是 void / const struct xxx / int 等
+            sed -i "s/^static \(.*[[:space:]]$SYM\)/\1/" "$FILE"
+
+            # 文件末尾追加导出
+            printf '\n/* ReSukiSU: static export for KALLSYMS_ALL=n */\nEXPORT_SYMBOL_GPL(%s);\n' "$SYM" >> "$FILE"
+
+            # 硬校验
+            grep -q "^EXPORT_SYMBOL_GPL($SYM)" "$FILE" \
+              || { echo "FATAL: $SYM 未导出"; exit 1; }
+
+            echo "[OK] $SYM 导出完成"
+            grep -n "$SYM" "$FILE" | head -5
+          }
+
+          # === ReSukiSU 静态导出符号清单 ===
+          # 每当 ReSukiSU 报"haven't export XXX"，就在下面加一行：
+          #   export_one "<file.c>" "<symbol>"
+
+          # 1) sel_handle_status_ops → security/selinux/selinuxfs.c
+          export_one "security/selinux/selinuxfs.c" "sel_handle_status_ops"
+
+          # 2) security_dump_masked_av → security/selinux/ss/services.c
+          export_one "security/selinux/ss/services.c" "security_dump_masked_av"
+
+          echo ""
+          echo "[OK] 所有 ReSukiSU 所需符号导出完成"
       - name: 🔧 Set gki_defconfig (设置编译配置) 
         run: |
           cd kernel_workspace
