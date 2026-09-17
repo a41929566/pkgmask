@@ -780,11 +780,11 @@ jobs:
             printf '\nobj-$(CONFIG_PKGMASK) += pkgmask/\n' >> drivers/misc/Makefile
           grep -q 'CONFIG_PKGMASK=y' arch/arm64/configs/gki_defconfig || \
             echo 'CONFIG_PKGMASK=y' >> arch/arm64/configs/gki_defconfig
-          # v4.11 关键: binder.c 零改动 (BINDER_INJECT=False) - 不注入任何 binder 代码
+          # v4.14 关键: binder.c 零改动 (BINDER_INJECT=False) - 不注入任何 binder 代码
           echo "binder.c 未修改 (BINDER_INJECT=False)，无 binder 崩溃面"
-          grep -q 'xw3e8b_init()' drivers/misc/pkgmask/pkgmask.c && echo "[OK] pkgmask v4.11 已集成 xw3e8b_init"
-          grep -q 'hide_proc_enabled' drivers/misc/pkgmask/pkgmask.c && echo "[OK] pkgmask v4.11 进程隐藏参数在位"
-          echo "pkgmask v4.11 + hwid_spoof 补丁应用完成"
+          grep -q 'xw3e8b_init()' drivers/misc/pkgmask/pkgmask.c && echo "[OK] pkgmask v4.14 已集成 xw3e8b_init"
+          grep -q 'hide_proc_enabled' drivers/misc/pkgmask/pkgmask.c && echo "[OK] pkgmask v4.14 进程隐藏参数在位"
+          echo "pkgmask v4.14 + hwid_spoof 补丁应用完成"
           ls -l drivers/misc/pkgmask/
       - name: 🔧 Set Kernel name (设置内核名称)
         run: |
