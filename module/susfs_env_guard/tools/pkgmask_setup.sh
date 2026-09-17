@@ -86,11 +86,17 @@ do_apply() {
         log 1 "pkgmask 内核节点缺失（需 CONFIG_PKGMASK=y 的内核），跳过"
         echo "PKGMASK=UNSUPPORTED"; return 1
     fi
-    local deny paths procs mode
+    local deny paths procs mode extra
     deny=$(build_deny_uids)
     paths=$(build_target_paths)
+    extra=$(build_extra_paths)
     procs=$(build_hide_procs)
     mode=$(get_config pkgmask_scope deny)
+
+    # 合并敏感路径：包名路径 + 系统信号文件路径
+    if [ -n "$extra" ]; then
+        paths="${paths:+$paths,}$extra"
+    fi
 
     # 顺序：先数据，后模式/开关，最后 reload
     w hide_dirents 1
