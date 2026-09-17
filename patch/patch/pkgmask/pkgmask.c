@@ -232,10 +232,31 @@ static int pmk_read_exit(struct kretprobe_instance *ri, struct pt_regs *regs)
 	return 0;
 }
 
+/*
+ * v4.13 关键修复：vfs_read kretprobe 改为惰性注册。
+ *
+ * v4.12 在 xk7a9f_init() 里无条件 register_read_comm_hook()，
+ * 导致每次 read(2) 都进一次 kprobe。开机早期 init/logd/vold
+ * 对 /proc /sys /dev 的 read() 调用量极大，vfs_read kretprobe
+ * 的固定开销（保存 pt_regs、entry/exit 两次陷入）足以拖慢启动，
+ * 触发 watchdog → kernel panic → Bootloader 判失败 → 黄字循环。
+ *
+ * 现在改为：只有用户态通过 reload 节点写入 hide_proc_enabled=1
+ * 且 hide_proc_names 非空时，才真正注册 vfs_read hook。
+ * 开机时默认不注册，零开销。
+ */
+static bool read_comm_hook_registered;
+static DEFINE_MUTEX(read_comm_hook_lock);
+
 static void register_read_comm_hook(void)
 {
 	int ret;
 
+	mutex_lock(&read_comm_hook_lock);
+	if (read_comm_hook_registered) {
+		mutex_unlock(&read_comm_hook_lock);
+		return;
+	}
 	memset(&read_comm_kp, 0, sizeof(read_comm_kp));
 	read_comm_kp.kp.symbol_name = "vfs_read";
 	read_comm_kp.entry_handler = pmk_read_entry;
@@ -246,14 +267,22 @@ static void register_read_comm_hook(void)
 	if (ret < 0) {
 		pr_info(PM_LOG_PREFIX "vfs_read/comm hook unavailable (%d)\n", ret);
 		memset(&read_comm_kp, 0, sizeof(read_comm_kp));
+	} else {
+		read_comm_hook_registered = true;
+		pr_info(PM_LOG_PREFIX "vfs_read/comm hook registered\n");
 	}
+	mutex_unlock(&read_comm_hook_lock);
 }
 
 static void unregister_read_comm_hook(void)
 {
-	if (read_comm_kp.kp.symbol_name)
+	mutex_lock(&read_comm_hook_lock);
+	if (read_comm_hook_registered) {
 		unregister_kretprobe(&read_comm_kp);
+		read_comm_hook_registered = false;
+	}
 	memset(&read_comm_kp, 0, sizeof(read_comm_kp));
+	mutex_unlock(&read_comm_hook_lock);
 }
 
 static bool is_in_uid_list(const uid_t *list, unsigned int count, uid_t uid)
@@ -490,7 +519,11 @@ static int register_perm_getattr_hooks(void)
 {
 	int ret;
 
-	register_read_comm_hook();
+   /*
+    * v4.13: 不在这里注册 read_comm hook。
+    * vfs_read kretprobe 的开销在开机早期会拖慢 init，
+    * 改为在 apply_config() 里按 hide_proc_enabled 按需注册。
+    */
 
 	memset(&perm_kp, 0, sizeof(perm_kp));
 	perm_kp.handler = perm_exit;
@@ -810,11 +843,22 @@ static int apply_config(void)
 		pr_info(PM_LOG_PREFIX "invalid allow_uids\n");
 		return -EINVAL;
 	}
+
 	resolve_target_paths(target_paths);
 	parse_hide_proc_names(hide_proc_names_buf);
 
 	if (hook_perm || hook_getattr)
 		register_perm_getattr_hooks();
+
+	/*
+	 * v4.13: 只有用户态显式启用了进程隐藏，才挂 vfs_read hook。
+	 * 开机阶段 hide_proc_enabled=0 且 proc_name_count=0，
+	 * 这里走 else 分支，vfs_read hook 不注册，零开销。
+	 */
+	if (hide_proc_enabled && proc_name_count > 0)
+		register_read_comm_hook();
+	else
+		unregister_read_comm_hook();
 
 	pr_debug(PM_LOG_PREFIX "config applied: scope=%s targets=%u deny=%u allow=%u "
 		"dirents=%d getdents=%d perm=%d getattr=%d prochide=%d proccount=%u\n",
