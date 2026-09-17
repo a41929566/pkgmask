@@ -407,7 +407,7 @@ static int register_perm_getattr_hooks(void)
 
 static void unregister_perm_getattr_hooks(void)
 {
-	unregister_read_comm_hook();
+
 	if (perm_kp.kp.symbol_name)
 		unregister_kretprobe(&perm_kp);
 	if (getattr_kp.kp.symbol_name)
@@ -703,16 +703,6 @@ static int apply_config(void)
 
 	if (hook_perm || hook_getattr)
 		register_perm_getattr_hooks();
-
-	/*
-	 * v4.13: 只有用户态显式启用了进程隐藏，才挂 vfs_read hook。
-	 * 开机阶段 hide_proc_enabled=0 且 proc_name_count=0，
-	 * 这里走 else 分支，vfs_read hook 不注册，零开销。
-	 */
-	if (hide_proc_enabled && proc_name_count > 0)
-		register_read_comm_hook();
-	else
-		unregister_read_comm_hook();
 
 	pr_debug(PM_LOG_PREFIX "config applied: scope=%s targets=%u deny=%u allow=%u "
 		"dirents=%d getdents=%d perm=%d getattr=%d prochide=%d proccount=%u\n",
