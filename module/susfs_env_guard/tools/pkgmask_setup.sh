@@ -49,6 +49,27 @@ build_target_paths() {
     echo "$out"
 }
 
+# 构建"系统信号文件"隐藏列表（只对 deny_uids 里的检测方生效）
+# 精简列表：避免超过内核 MAX_HIDE_TARGETS（64），当前 7 条最关键的
+build_extra_paths() {
+    local out="" p
+    for p in \
+        /proc/kallsyms \
+        /proc/config.gz \
+        /proc/modules \
+        /sys/block/sda/queue/scheduler \
+        /sys/module/rezygisk \
+        /sys/module/zygisk_assistant \
+        /proc/device-tree/soc/oplus,hmbird; do
+        [ -e "$p" ] && out="${out:+$out,}$p"
+    done
+    local user_extra
+    user_extra=$(get_config pkgmask_extra_paths "")
+    if [ -n "$user_extra" ]; then
+        out="${out:+$out,}$user_extra"
+    fi
+    echo "$out"
+}
 build_hide_procs() {
     # task->comm 最长 15 字符；主进程 comm 通常等于包名，这里截断到 15
     local procs out="" p c
