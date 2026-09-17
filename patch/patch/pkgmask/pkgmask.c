@@ -915,17 +915,29 @@ module_param_cb(status, &status_ops, NULL, 0400);
 
 static int __init xk7a9f_init(void)
 {
-	int ret;
-
-	ret = register_perm_getattr_hooks();
-	if (ret)
-		pr_info(PM_LOG_PREFIX "initial perm/getattr hooks skipped (%d)\n", ret);
-
+	/*
+	 * v4.14: 启动时不注册任何 kretprobe。
+	 *
+	 * inode_permission / vfs_getattr 是 VFS 最热的函数，每次文件访问
+	 * 都会经过。在开机早期无条件挂 kretprobe，会让 init 阶段的权限
+	 * 检查 / stat 调用多两次陷入（保存 pt_regs、return address
+	 * trampoline、entry/exit handler），足以把一加 Bootloader 的启动
+	 * 时间窗口拖破 → 判启动失败 → 卡黄字无限重启。
+	 *
+	 * v4.13 已经处理了 vfs_read 的惰性化，但 inode_permission /
+	 * vfs_getattr 这两个更热的 kretprobe 仍然在 init 里无条件注册。
+	 * v4.14 一并惰性化：只有用户态通过 sysfs 写入 hook_perm=1 或
+	 * hook_getattr=1 并触发 reload，apply_config() 才按需注册。
+	 *
+	 * SUSFS Env Guard 的 pkgmask_setup.sh 会在 sys.boot_completed==1
+	 * 之后写 hook_perm=1 / hook_getattr=1 并触发 reload，功能不受影响，
+	 * 只是延后到系统稳定之后注册。
+	 */
 #ifdef CONFIG_PKGMASK_HWID
 	xw3e8b_init();
 #endif
 
-	pr_debug(PM_LOG_PREFIX "v4.11 built-in initialized (nothing hidden until configured)\n");
+	pr_debug(PM_LOG_PREFIX "v4.14 built-in initialized (deferred kretprobe registration)\n");
 	return 0;
 }
 
