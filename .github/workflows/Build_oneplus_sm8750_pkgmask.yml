@@ -701,7 +701,7 @@ jobs:
           cp "${GITHUB_WORKSPACE}/patch/patch/readdir.c" fs/readdir.c
           # 合并版 readdir.c 校验：SUSFS SUS_PATH 段 + pkgmask 弱钩子必须共存
           grep -q 'susfs_is_inode_sus_path' fs/readdir.c || { echo "FATAL: readdir.c 缺 SUSFS SUS_PATH 段"; exit 1; }
-          grep -q 'xk7a9f_filter' fs/readdir.c || { echo "FATAL: readdir.c 缺 pkgmask 弱钩子"; exit 1; }
+          grep -q 'iterate_dir_filter' fs/readdir.c || { echo "FATAL: readdir.c 缺 pkgmask 弱钩子"; exit 1; }
           echo "安装 pkgmask 驱动源码 (drivers/misc/pkgmask/: Kconfig/Makefile/pkgmask.c/hwid_spoof.c/h)..."
           mkdir -p drivers/misc/pkgmask
           cp "${GITHUB_WORKSPACE}"/patch/patch/pkgmask/* drivers/misc/pkgmask/
