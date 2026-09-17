@@ -23,6 +23,7 @@
 
 ORIG="${BACKUP_DIR}/props_orig.conf"
 L2_MARKER="${DATA_DIR}/L2_applied"
+L0L1_MARKER="${DATA_DIR}/L0L1_applied"
 
 # ============================================================
 # 锁状态 / root 痕迹属性（安全区，可以放心改）
@@ -75,6 +76,11 @@ do_apply() {
     # L1 其他安全属性
     rp_set net.hostname "localhost" 2>/dev/null
 
+    # 标记 L0/L1 已应用（写入当前 boot_id），供 do_restore 判断
+    # 是否应删除真值。防止 spoof_props_enabled=0 时每次开机删掉
+    # init 写入的真实属性值。
+    cat /proc/sys/kernel/random/boot_id > "$L0L1_MARKER" 2>/dev/null
+
     # L2 引导状态属性层同步（与 SUSFS 内核重定向保持一致）
     #
     # ⚠️ 安全守卫：L2 修改的是 ro.boot.* 属性，一加 Bootloader 会在
@@ -109,8 +115,22 @@ do_apply() {
 
 # ---------- restore：删除覆盖，回落真值 ----------
 do_restore() {
-    for pair in $LOCK_PROPS; do rp_del "${pair%%=*}"; done
-    for p in $MISC_PROPS; do rp_del "$p"; done
+    # L0/L1 还原 —— 只在「本 boot session 内确实 apply 过」时才删
+    # 防止 spoof_props_enabled=0 时每次开机删掉 init 写入的真值
+    if [ -f "$L0L1_MARKER" ]; then
+        _prev=$(cat "$L0L1_MARKER" 2>/dev/null)
+        _cur=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)
+        if [ -n "$_prev" ] && [ "$_prev" = "$_cur" ]; then
+            for pair in $LOCK_PROPS; do rp_del "${pair%%=*}"; done
+            for p in $MISC_PROPS; do rp_del "$p"; done
+            log 2 "props_spoof L0/L1: restored (same boot session)"
+        else
+            log 2 "props_spoof L0/L1: stale marker from previous boot, init already restored real values"
+        fi
+        rm -f "$L0L1_MARKER"
+    else
+        log 2 "props_spoof L0/L1: no marker, skip delete (keep real values)"
+    fi
 
     # L2 引导状态属性还原 —— 只在「本 boot session 内确实 apply 过」时才删
     #
