@@ -160,6 +160,103 @@ static unsigned int allow_uid_count;
 
 /* --------------------------- helpers --------------------------- */
 
+/*
+ * v4.12: /proc/<pid>/comm direct-read defense.
+ *
+ * process_hide filters /proc root getdents by PID->comm, but a detector
+ * that brute-forces /proc/1..N and reads /proc/<pid>/comm directly still
+ * sees the hidden comm. This kretprobe intercepts vfs_read() on that path
+ * and returns 0 (EOF) so the caller reads an empty file.
+ */
+static bool pmk_is_hidden_proc_comm(struct file *file)
+{
+	struct dentry *d, *parent;
+	struct inode *inode;
+	const char *name, *pname;
+	int lpid;
+	pid_t pid;
+	struct task_struct *task;
+	unsigned int j;
+
+	if (!hide_proc_enabled || !proc_name_count)
+		return false;
+	if (!file || !file->f_path.dentry)
+		return false;
+	d = file->f_path.dentry;
+	inode = d_inode(d);
+	if (!inode || !inode->i_sb || inode->i_sb->s_magic != PROC_SUPER_MAGIC)
+		return false;
+	name = (const char *)d->d_name.name;
+	if (!name || strcmp(name, "comm") != 0)
+		return false;
+	parent = d->d_parent;
+	if (!parent)
+		return false;
+	pname = (const char *)parent->d_name.name;
+	if (!pname || kstrtoint(pname, 10, &lpid) != 0 || lpid <= 0)
+		return false;
+
+	pid = (pid_t)lpid;
+	rcu_read_lock();
+	task = find_task_by_vpid(pid);
+	if (task) {
+		for (j = 0; j < proc_name_count; j++) {
+			if (strcmp(task->comm, proc_names[j]) == 0) {
+				rcu_read_unlock();
+				return true;
+			}
+		}
+	}
+	rcu_read_unlock();
+	return false;
+}
+
+static struct kretprobe read_comm_kp;
+
+static int pmk_read_entry(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+	struct file *file = (struct file *)regs->regs[0];
+
+	if (!pmk_is_hidden_proc_comm(file))
+		return 0;
+	*(struct file **)ri->data = file;
+	return 0;
+}
+
+static int pmk_read_exit(struct kretprobe_instance *ri, struct pt_regs *regs)
+{
+	/* entry stored the file pointer only if it matched; non-match leaves NULL */
+	if (!*(struct file **)ri->data)
+		return 0;
+	regs->regs[0] = 0;
+	return 0;
+}
+
+static void register_read_comm_hook(void)
+{
+	int ret;
+
+	memset(&read_comm_kp, 0, sizeof(read_comm_kp));
+	read_comm_kp.kp.symbol_name = "vfs_read";
+	read_comm_kp.entry_handler = pmk_read_entry;
+	read_comm_kp.handler = pmk_read_exit;
+	read_comm_kp.data_size = sizeof(void *);
+	read_comm_kp.maxactive = 64;
+	ret = register_kretprobe(&read_comm_kp);
+	if (ret < 0) {
+		pr_info(PM_LOG_PREFIX "vfs_read/comm hook unavailable (%d)\n", ret);
+		memset(&read_comm_kp, 0, sizeof(read_comm_kp));
+	}
+}
+
+static void unregister_read_comm_hook(void)
+{
+	if (read_comm_kp.kp.symbol_name)
+		unregister_kretprobe(&read_comm_kp);
+	memset(&read_comm_kp, 0, sizeof(read_comm_kp));
+}
+
+static bool is_in_uid_list(const uid_t *list, unsigned int count, uid_t uid)
 static bool is_in_uid_list(const uid_t *list, unsigned int count, uid_t uid)
 {
 	unsigned int i;
@@ -394,6 +491,8 @@ static int register_perm_getattr_hooks(void)
 {
 	int ret;
 
+	register_read_comm_hook();
+
 	memset(&perm_kp, 0, sizeof(perm_kp));
 	perm_kp.handler = perm_exit;
 	perm_kp.entry_handler = perm_entry;
@@ -422,6 +521,7 @@ static int register_perm_getattr_hooks(void)
 
 static void unregister_perm_getattr_hooks(void)
 {
+	unregister_read_comm_hook();
 	if (perm_kp.kp.symbol_name)
 		unregister_kretprobe(&perm_kp);
 	if (getattr_kp.kp.symbol_name)
