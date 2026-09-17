@@ -684,39 +684,7 @@ jobs:
             exit 1
           fi
           # ---- v4.14 追加：把 context_struct_compute_av 的 extern 声明提升到文件作用域 ----
-          if ! grep -q '__workflow_file_scope_ctx_av_decl__' "$SELINUX_HIDE"; then
-            LAST_INC=$(grep -n '^#include' "$SELINUX_HIDE" | tail -1 | cut -d: -f1)
-            if [ -z "$LAST_INC" ]; then
-              echo "FATAL: selinux_hide.c 里找不到 #include"
-              exit 1
-            fi
-            echo "[INFO] 最后一个 #include 在第 $LAST_INC 行"
-            {
-              head -n "$LAST_INC" "$SELINUX_HIDE"
-              printf '%s\n' \
-                '' \
-                '/* __workflow_file_scope_ctx_av_decl__ */' \
-                'struct policydb;' \
-                'struct context;' \
-                'struct av_decision;' \
-                'struct extended_perms;' \
-                'extern void context_struct_compute_av(struct policydb *policydb,' \
-                '                                      struct context *scontext,' \
-                '                                      struct context *tcontext,' \
-                '                                      u16 tclass,' \
-                '                                      struct av_decision *avd,' \
-                '                                      struct extended_perms *xperms);'
-              tail -n +$((LAST_INC + 1)) "$SELINUX_HIDE"
-            } > "$SELINUX_HIDE.new"
-            mv "$SELINUX_HIDE.new" "$SELINUX_HIDE"
-            grep -q '__workflow_file_scope_ctx_av_decl__' "$SELINUX_HIDE" || {
-              echo "FATAL: 注入 selinux_hide.c 失败"
-              exit 1
-            }
-            echo "[OK] selinux_hide.c 已注入文件作用域 extern 声明"
-          else
-            echo "[INFO] selinux_hide.c 已有文件作用域声明，跳过注入"
-          fi
+      
       - name: 🔧 Set gki_defconfig (设置编译配置) 
         run: |
           cd kernel_workspace
