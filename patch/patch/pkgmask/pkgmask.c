@@ -168,6 +168,41 @@ static bool is_in_uid_list(const uid_t *list, unsigned int count, uid_t uid)
 			return true;
 	return false;
 }
+/*
+ * 向上追溯 depth 层 real_parent，检查祖先链上是否有 deny_uids 里的 UID
+ * 场景：检测方 su 后，root shell 的祖先仍可追溯到检测方进程
+ *
+ * 只做 real_parent 追溯（不做 cgroup），原因是：
+ *   1) cgroup 需要 task_cgroup_path() 拿 cgroup_mutex，可能在某些内核
+ *      持锁路径里被调用导致死锁
+ *   2) real_parent 追溯用 rcu_dereference，纯读操作，无死锁风险
+ *   3) 能挡住"检测方直接 su"的场景，这也是绝大多数检测工具的手法
+ */
+static bool has_deny_ancestor(int depth)
+{
+	struct task_struct *p = current;
+	int i;
+
+	rcu_read_lock();
+	for (i = 0; i < depth; i++) {
+		struct task_struct *parent;
+
+		parent = rcu_dereference(p->real_parent);
+		if (!parent || parent == p)
+			break;
+
+		{
+			uid_t puid = from_kuid(&init_user_ns, task_uid(parent));
+			if (is_in_uid_list(deny_uid_list, deny_uid_count, puid)) {
+				rcu_read_unlock();
+				return true;
+			}
+		}
+		p = parent;
+	}
+	rcu_read_unlock();
+	return false;
+}
 
 static bool should_hide_for_current(void)
 {
@@ -180,8 +215,19 @@ static bool should_hide_for_current(void)
 	kuid = current_uid();
 	uid = from_kuid(&init_user_ns, kuid);
 
-	if (active_scope == SCOPE_DENY)
-		return is_in_uid_list(deny_uid_list, deny_uid_count, uid);
+	if (active_scope == SCOPE_DENY) {
+		/* 快路径：直接命中 deny_uids（普通 APP 走这里，零开销） */
+		if (is_in_uid_list(deny_uid_list, deny_uid_count, uid))
+			return true;
+
+		/* 慢路径：uid==0 时检测方可能已提权
+		 * 追溯 real_parent 祖先链 8 层，捕捉 su / sh -c 嵌套 */
+		if (uid == 0 && has_deny_ancestor(8))
+			return true;
+
+		return false;
+	}
+
 	if (active_scope == SCOPE_ALLOW)
 		return !is_in_uid_list(allow_uid_list, allow_uid_count, uid);
 	return false;
