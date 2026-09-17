@@ -818,6 +818,14 @@ jobs:
           LLVM_NM=../clang18/bin/llvm-nm
           [ -x "$LLVM_NM" ] || LLVM_NM=llvm-nm
           "$LLVM_NM" out/vmlinux | grep -Eq '(^| )xw3e8b_init$' || { echo "FATAL: xw3e8b_init 未链接进 vmlinux"; exit 1; }
+          # 弱/强符号覆盖校验：iterate_dir_filter 必须只有一个符号
+          # LTO 下若弱符号未被强定义覆盖，功能会静默失效
+          ITER_COUNT=$("$LLVM_NM" out/vmlinux | grep -c ' iterate_dir_filter$' || true)
+          test "$ITER_COUNT" -eq 1 || {
+            echo "FATAL: iterate_dir_filter 符号数=$ITER_COUNT（期望 1）"
+            echo "弱符号未被 pkgmask 强定义覆盖，pkgmask 会静默失效"
+            exit 1
+          }
           RELEASE=$(cat out/include/config/kernel.release 2>/dev/null || true)
           echo "最终 kernel.release=$RELEASE"
           test "$RELEASE" = "6.6.89-android15-8-g7e1f3c083cc6-abogki467167594-4k" || {
