@@ -68,6 +68,15 @@ do_apply() {
     # L1 其他安全属性
     rp_set net.hostname "localhost" 2>/dev/null
 
+    # L2 引导状态属性层同步（与 SUSFS 内核重定向保持一致）
+    # 安全前提：service.sh 在开机 10 秒后调用本脚本，
+    # 此时 Bootloader 的 zygote 前校验早已完成，不会再触发黄字
+    rp_set ro.boot.verifiedbootstate    "green"
+    rp_set ro.boot.flash.locked         "1"
+    rp_set ro.boot.vbmeta.device_state  "locked"
+    rp_set ro.boot.veritymode           "enforcing"
+    rp_set ro.boot.selinux              "enforcing"
+
     log 2 "props_spoof applied (safe mode: lock-state props only)"
     echo "PROPS_SPOOF=OK"
 }
@@ -76,6 +85,12 @@ do_apply() {
 do_restore() {
     for pair in $LOCK_PROPS; do rp_del "${pair%%=*}"; done
     for p in $MISC_PROPS; do rp_del "$p"; done
+    # L2 引导状态属性的还原
+    for p in ro.boot.verifiedbootstate ro.boot.flash.locked \
+             ro.boot.vbmeta.device_state ro.boot.veritymode \
+             ro.boot.selinux; do
+        rp_del "$p"
+    done
     log 2 "props_spoof restored (overrides deleted)"
 }
 
