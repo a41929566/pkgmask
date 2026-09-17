@@ -257,7 +257,6 @@ static void unregister_read_comm_hook(void)
 }
 
 static bool is_in_uid_list(const uid_t *list, unsigned int count, uid_t uid)
-static bool is_in_uid_list(const uid_t *list, unsigned int count, uid_t uid)
 {
 	unsigned int i;
 	for (i = 0; i < count; i++)
