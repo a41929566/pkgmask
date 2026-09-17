@@ -62,6 +62,7 @@
 #include <linux/mm.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
+#include <linux/sched.h>
 #include "hwid_spoof.h"
 
 
