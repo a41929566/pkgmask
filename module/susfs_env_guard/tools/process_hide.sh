@@ -74,11 +74,10 @@ do_apply() {
     fi
 
     if [ -z "$procs" ]; then
-        write_to_kernel ""
-        echo 0 > "$EN_NODE" 2>/dev/null
-        trigger_reload
-        log 2 "process_hide: no process to hide"
-        echo "PROCESS_HIDE=OK (empty list)"
+        # 文件为空时不清空内核，避免覆盖 pkgmask_setup.sh 写入的隐藏列表
+        # 用户可通过 WebUI 逐个删除，或设置 spoof_process_hide_enabled=0 显式关闭
+        log 2 "process_hide: hidden_procs.txt 为空，跳过（保留内核现有设置）"
+        echo "PROCESS_HIDE=OK (empty file, kernel untouched)"
         return 0
     fi
 
