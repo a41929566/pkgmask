@@ -605,6 +605,7 @@ struct compat_getdents_callback {
 	int prev_reclen;
 	int count;
 	int error;
+	const struct inode *dir;	/* pkgmask: parent inode */
 };
 static bool compat_filldir(struct dir_context *ctx, const char *name, int namlen,
 		loff_t offset, u64 ino, unsigned int d_type)
@@ -620,6 +621,10 @@ static bool compat_filldir(struct dir_context *ctx, const char *name, int namlen
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	struct inode *inode;
 #endif
+
+	/* pkgmask: hide matching entries (skip without writing) */
+	if (iterate_dir_filter(name, buf->dir))
+		return true;
 
 	buf->error = verify_dirent_name(name, namlen);
 	if (unlikely(buf->error))
@@ -681,6 +686,7 @@ COMPAT_SYSCALL_DEFINE3(getdents, unsigned int, fd,
 	f = fdget_pos(fd);
 	if (!f.file)
 		return -EBADF;
+	buf.dir = file_inode(f.file);
 
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 	buf.sb = f.file->f_inode->i_sb;
