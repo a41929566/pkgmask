@@ -70,9 +70,10 @@ hwid_uids=""
 #           allow=只对白名单显示
 pkgmask_scope=deny
 
-# pkgmask 作用域 UID（逗号分隔，留空=全局）
-# 注意：A/B 清单由 WebUI 写入 config/target.txt，不在这里手填
-pkgmask_uids=""
+
+# pkgmask 额外隐藏路径（逗号分隔，会追加到内核 target_paths）
+# 一般留空；pkgmask_setup.sh 已内置一批系统信号路径
+pkgmask_extra_paths=""
 
 
 # ============================================================
