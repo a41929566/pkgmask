@@ -657,6 +657,32 @@ jobs:
 
           echo ""
           echo "[OK] 所有 ReSukiSU 所需符号导出完成"
+
+          # ---- 修复 ReSukiSU 的 selinux_hide.c 编译冲突 ----
+          # ReSukiSU 的 selinux_hide.c 里同时存在：
+          #   - 494 行 extern void context_struct_compute_av(...)   （要用外部的）
+          #   - 1100 行 static void context_struct_compute_av(...)  （fallback 实现）
+          # 二者在同一编译单元不能共存（C 语言约束）。
+          # 既然我们已在 services.c 导出了该符号，把 static fallback 改名即可。
+          SELINUX_HIDE="drivers/kernelsu/feature/selinux_hide.c"
+          if [ -f "$SELINUX_HIDE" ]; then
+            if grep -q '^static void context_struct_compute_av(' "$SELINUX_HIDE"; then
+              sed -i 's/^static void context_struct_compute_av(/static void __maybe_unused __ksu_ctx_av_unused_local(/' "$SELINUX_HIDE"
+              if grep -q '^static void __maybe_unused __ksu_ctx_av_unused_local(' "$SELINUX_HIDE"; then
+                echo "[OK] selinux_hide.c 的 static context_struct_compute_av 已改名，避免与 extern 声明冲突"
+              else
+                echo "FATAL: sed 处理 selinux_hide.c 失败"
+                exit 1
+              fi
+            else
+              echo "[INFO] selinux_hide.c 里没有以 'static void context_struct_compute_av(' 开头的行"
+              echo "[INFO] 当前匹配行（供诊断）："
+              grep -n 'context_struct_compute_av' "$SELINUX_HIDE" | head -20 || true
+            fi
+          else
+            echo "FATAL: 未找到 $SELINUX_HIDE"
+            exit 1
+          fi
       - name: 🔧 Set gki_defconfig (设置编译配置) 
         run: |
           cd kernel_workspace
