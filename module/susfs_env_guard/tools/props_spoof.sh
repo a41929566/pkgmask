@@ -103,6 +103,13 @@ do_apply() {
         rp_set ro.boot.vbmeta.device_state  "locked"
         rp_set ro.boot.veritymode           "enforcing"
         rp_set ro.boot.selinux              "enforcing"
+        # vendor 命名空间镜像（部分一加机型检测方读 vendor.boot.*）
+        # 只在属性存在时才设置，避免在不支持的机型上制造脏属性
+        if [ -n "$(getprop vendor.boot.verifiedbootstate)" ]; then
+            rp_set vendor.boot.verifiedbootstate    "green"
+            rp_set vendor.boot.vbmeta.device_state  "locked"
+            rp_set vendor.boot.flash.locked         "1"
+        fi
         cat /proc/sys/kernel/random/boot_id > "$L2_MARKER" 2>/dev/null
         log 2 "props_spoof L2: boot-completed, applied ro.boot.* spoof"
     else
@@ -150,7 +157,10 @@ do_restore() {
         if [ -n "$_prev_boot" ] && [ "$_prev_boot" = "$_cur_boot" ]; then
             for p in ro.boot.verifiedbootstate ro.boot.flash.locked \
                      ro.boot.vbmeta.device_state ro.boot.veritymode \
-                     ro.boot.selinux; do
+                     ro.boot.selinux \
+                     vendor.boot.verifiedbootstate \
+                     vendor.boot.vbmeta.device_state \
+                     vendor.boot.flash.locked; do
                 rp_del "$p"
             done
             log 2 "props_spoof L2: restored (same boot session)"
