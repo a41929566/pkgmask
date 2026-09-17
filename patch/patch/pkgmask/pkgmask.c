@@ -817,7 +817,7 @@ static int apply_config(void)
 		register_perm_getattr_hooks();
 
 	pr_debug(PM_LOG_PREFIX "config applied: scope=%s targets=%u deny=%u allow=%u "
-		"dirents=%d getdents=%d perm=%d getattr=%d\n",
+		"dirents=%d getdents=%d perm=%d getattr=%d prochide=%d proccount=%u\n",
 		scope_mode, target_count, deny_uid_count, allow_uid_count,
 		hide_dirents ? 1 : 0, hook_getdents ? 1 : 0,
 		hook_perm ? 1 : 0, hook_getattr ? 1 : 0,
