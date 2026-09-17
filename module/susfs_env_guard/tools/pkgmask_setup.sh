@@ -101,6 +101,18 @@ do_apply() {
         echo "hide_proc_names=$procs"
     } > "$PMC/config.conf"
 
+    # 合并到 hidden_procs.txt，避免 process_hide.sh 的 do_apply 清空内核
+    # 用户通过 WebUI 手动添加的进程不会被覆盖
+    if [ -n "$procs" ]; then
+        local PROC_CONF="$DATA_DIR/hidden_procs.txt"
+        touch "$PROC_CONF" 2>/dev/null
+        echo "$procs" | tr ',' '\n' | while IFS= read -r _p; do
+            [ -z "$_p" ] && continue
+            grep -qxF "$_p" "$PROC_CONF" 2>/dev/null || echo "$_p" >> "$PROC_CONF"
+        done
+        log 2 "pkgmask: merged hide_proc_names into hidden_procs.txt"
+    fi
+
     log 2 "pkgmask applied deny=[$deny] paths#=$(echo "$paths" | tr ',' '\n' | grep -c data)"
     echo "PKGMASK=OK"
     do_status
