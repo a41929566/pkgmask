@@ -651,6 +651,10 @@ jobs:
           # 2) security_dump_masked_av → security/selinux/ss/services.c
           export_one "security/selinux/ss/services.c" "security_dump_masked_av"
 
+          # 3) context_struct_compute_av → security/selinux/ss/services.c
+          #    ReSukiSU 在 KALLSYMS_ALL=n 时必需，否则 static_export_check.mk 报错
+          export_one "security/selinux/ss/services.c" "context_struct_compute_av"
+
           echo ""
           echo "[OK] 所有 ReSukiSU 所需符号导出完成"
       - name: 🔧 Set gki_defconfig (设置编译配置) 
