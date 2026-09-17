@@ -373,12 +373,6 @@ static int register_perm_getattr_hooks(void)
 {
 	int ret;
 
-   /*
-    * v4.13: 不在这里注册 read_comm hook。
-    * vfs_read kretprobe 的开销在开机早期会拖慢 init，
-    * 改为在 apply_config() 里按 hide_proc_enabled 按需注册。
-    */
-
 	memset(&perm_kp, 0, sizeof(perm_kp));
 	perm_kp.handler = perm_exit;
 	perm_kp.entry_handler = perm_entry;
